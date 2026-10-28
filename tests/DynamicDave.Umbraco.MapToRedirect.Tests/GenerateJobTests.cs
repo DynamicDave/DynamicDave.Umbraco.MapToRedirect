@@ -58,7 +58,7 @@ public class GenerateJobTests
     [Fact]
     public async Task GenerateJob_writes_sorted_csv_with_match_columns()
     {
-        _http.Text(SitemapUrl, UrlSet("/contact", "/old/history", "/nothing-here", "/garden-chairs-teak-wood"));
+        _http.Text(SitemapUrl, UrlSet("/contact", "/Old/History.html?x=1", "/nothing-here", "/garden-chairs-teak-wood"));
 
         var (key, kind, _) = await Job().RunAsync(SitemapUrl, MatchMethod.Url, Site.RootKey, Culture, Progress(), default);
 
@@ -71,7 +71,7 @@ public class GenerateJobTests
                 ["Old URL", "New URL", "Match", "Note"],
                 ["/nothing-here", "", "None", ""],
                 ["/garden-chairs-teak-wood", "/products/garden-chairs-teak", "Guess", "Similar URL"],
-                ["/old/history", "/about/history", "Likely", "Same last URL segment"],
+                ["/old/history.html", "/about/history", "Likely", "Same last URL segment"],
                 ["/contact", "/contact", "Exact", "Page exists at this path; no redirect needed"],
             ],
             Rows(stored.Content));

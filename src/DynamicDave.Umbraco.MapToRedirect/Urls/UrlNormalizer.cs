@@ -11,8 +11,42 @@ public static partial class UrlNormalizer
     [GeneratedRegex(@"^[a-zA-Z][a-zA-Z0-9+.\-]*:")]
     private static partial Regex SchemeRegex();
 
-    /// <summary>Returns the normalized path, or null when the input is empty or not a path / absolute http(s) URL.</summary>
+    /// <summary>
+    /// Returns the normalized path used to MATCH old URLs with pages (index files and extensions dropped), or null when
+    /// the input is empty or not a path / absolute http(s) URL. Not a redirect route: see <see cref="RoutePath"/>.
+    /// </summary>
     public static string? Normalize(string? url)
+    {
+        if (RoutePath(url) is not { } result)
+        {
+            return null;
+        }
+
+        var last = Slug(result);
+        if (last.Length > 0)
+        {
+            var parent = result[..^last.Length].TrimEnd('/');
+            if (IndexFiles.Contains(last))
+            {
+                return parent.Length == 0 ? "/" : parent;
+            }
+
+            var extension = Extensions.FirstOrDefault(e => last.Length > e.Length && last.EndsWith(e, StringComparison.Ordinal));
+            if (extension is not null)
+            {
+                return parent + "/" + last[..^extension.Length];
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the path as it is requested, for redirect routes and published-page checks: no scheme, host, port, query
+    /// or fragment; percent-decoded, lower-case, duplicate slashes collapsed, no trailing slash ("/" for the root). File
+    /// names and extensions stay ("/about/team.html"). Null for the same inputs as <see cref="Normalize"/>.
+    /// </summary>
+    public static string? RoutePath(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -37,28 +71,8 @@ public static partial class UrlNormalizer
             path = cut >= 0 ? value[..cut] : value;
         }
 
-        path = Uri.UnescapeDataString(path).ToLowerInvariant();
-
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var result = segments.Length == 0 ? "/" : "/" + string.Join('/', segments);
-
-        var last = segments.Length == 0 ? string.Empty : segments[^1];
-        if (last.Length > 0)
-        {
-            var parent = result[..^last.Length].TrimEnd('/');
-            if (IndexFiles.Contains(last))
-            {
-                return parent.Length == 0 ? "/" : parent;
-            }
-
-            var extension = Extensions.FirstOrDefault(e => last.Length > e.Length && last.EndsWith(e, StringComparison.Ordinal));
-            if (extension is not null)
-            {
-                return parent + "/" + last[..^extension.Length];
-            }
-        }
-
-        return result;
+        var segments = Uri.UnescapeDataString(path).ToLowerInvariant().Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0 ? "/" : "/" + string.Join('/', segments);
     }
 
     /// <summary>Returns the last segment of a normalized path ("/" gives an empty string).</summary>

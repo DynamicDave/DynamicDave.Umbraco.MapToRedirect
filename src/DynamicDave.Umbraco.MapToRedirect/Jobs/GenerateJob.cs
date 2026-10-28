@@ -104,7 +104,8 @@ public sealed class GenerateJob
                 counts.Add(result.Kind);
                 return (IReadOnlyList<string>)
                 [
-                    UrlNormalizer.Normalize(urls[i]) ?? urls[i],
+                    // The path as requested, so the redirect works for the old URL itself (extensions kept).
+                    UrlNormalizer.RoutePath(urls[i]) ?? urls[i],
                     result.Kind == MatchKind.None ? string.Empty : result.Page?.Path ?? string.Empty,
                     result.Kind.ToString(),
                     NoteText(result.Note),

@@ -43,7 +43,7 @@ public class TestSiteSeeder(
         var (testPage, variantPage) = await CreateContentTypesAsync();
 
         var klantNl = CreateSite("Klant NL", testPage, variant: false);
-        await SetDomainsAsync(klantNl, "en-US", ("klant-nl.localhost:44416", "nl-NL"));
+        await SetDomainsAsync(klantNl, "nl-NL", ("klant-nl.localhost:44416", "nl-NL"));
 
         var klantDe = CreateSite("Klant DE", testPage, variant: false);
         await SetDomainsAsync(klantDe, "en-US", ("klant-de.localhost:44416", "en-US"));

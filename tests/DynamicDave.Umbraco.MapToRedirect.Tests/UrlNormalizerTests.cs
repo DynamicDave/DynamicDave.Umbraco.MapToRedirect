@@ -26,6 +26,25 @@ public class UrlNormalizerTests
     public void Normalize_returns_null_for_non_paths(string? input) =>
         Assert.Null(UrlNormalizer.Normalize(input));
 
+    [Theory]
+    [InlineData("/About/Ons-Team.html?x=1", "/about/ons-team.html")]
+    [InlineData("/nieuws/index.html", "/nieuws/index.html")]
+    [InlineData("https://x.nl/a//b/", "/a/b")]
+    [InlineData("/", "/")]
+    [InlineData("https://x.nl", "/")]
+    [InlineData("/Caf%C3%A9.php#top", "/café.php")]
+    [InlineData("over-ons/default.aspx", "/over-ons/default.aspx")]
+    public void RoutePath_keeps_file_names_and_extensions(string input, string expected) =>
+        Assert.Equal(expected, UrlNormalizer.RoutePath(input));
+
+    [Theory]
+    [InlineData("mailto:x@y.z")]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("ftp://x/y")]
+    public void RoutePath_returns_null_for_non_paths(string? input) =>
+        Assert.Null(UrlNormalizer.RoutePath(input));
+
     [Fact]
     public void Variants_of_the_same_path_normalize_identically()
     {

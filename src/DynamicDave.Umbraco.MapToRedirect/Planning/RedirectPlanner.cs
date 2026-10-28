@@ -40,7 +40,8 @@ public sealed class RedirectPlanner(IRedirectStore store)
     {
         var result = new PlanRow(row.RowNumber, row.OldUrl, row.NewUrl, null, null, null, null, PlanOutcome.Error, PlanReason.InvalidOldUrl, null, null, false);
 
-        var oldPath = UrlNormalizer.Normalize(row.OldUrl);
+        // The path as requested (extensions kept): Umbraco looks redirects up by the requested path.
+        var oldPath = UrlNormalizer.RoutePath(row.OldUrl);
         if (oldPath is null) return result;
 
         result = result with { OldPath = oldPath, Route = RedirectRoute.For(site, culture, oldPath) };
@@ -67,13 +68,13 @@ public sealed class RedirectPlanner(IRedirectStore store)
 
         result = result with { PageKey = target.Key, PagePath = target.Path };
 
-        if (string.Equals(UrlNormalizer.Normalize(target.Path), oldPath, StringComparison.Ordinal))
+        // Umbraco only redirects when no published page exists at the requested path.
+        if (SiteCatalogRules.IsPublishedPath(pages, oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.PageExistsAtPath);
+
+        if (string.Equals(UrlNormalizer.RoutePath(target.Path), oldPath, StringComparison.Ordinal))
         {
             return Outcome(result, PlanOutcome.Skip, PlanReason.SameAsTarget);
         }
-
-        // Umbraco only redirects when no published page exists at the requested path.
-        if (SiteCatalogRules.IsPublishedPath(pages, oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.PageExistsAtPath);
 
         // The redirect in effect may be a culture-less one (all languages); ours would override it for this culture.
         var current = existing.Find(result.Route!, culture);

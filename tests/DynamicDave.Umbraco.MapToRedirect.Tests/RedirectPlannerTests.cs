@@ -36,9 +36,32 @@ public class RedirectPlannerTests
         var row = PlanOne("https://oud.klant.nl/Oud/Wie-Zijn-Wij.php?x=1", "https://www.klant.nl/over-ons/");
 
         Assert.Equal(
-            new PlanRow(2, "https://oud.klant.nl/Oud/Wie-Zijn-Wij.php?x=1", "https://www.klant.nl/over-ons/", "/oud/wie-zijn-wij",
-                "1057/oud/wie-zijn-wij", About.Key, "/over-ons", PlanOutcome.Add, PlanReason.None, null, null, false),
+            new PlanRow(2, "https://oud.klant.nl/Oud/Wie-Zijn-Wij.php?x=1", "https://www.klant.nl/over-ons/", "/oud/wie-zijn-wij.php",
+                "1057/oud/wie-zijn-wij.php", About.Key, "/over-ons", PlanOutcome.Add, PlanReason.None, null, null, false),
             row);
+    }
+
+    [Fact]
+    public void Old_url_with_an_extension_keeps_it_in_the_route()
+    {
+        var row = PlanOne("https://oud.klant.nl/About/Ons-Team.html", "/over-ons");
+
+        Assert.Equal((PlanOutcome.Add, "/about/ons-team.html", "1057/about/ons-team.html"), (row.Outcome, row.OldPath, row.Route));
+    }
+
+    [Fact]
+    public void Old_url_with_an_extension_is_not_the_page_without_it()
+    {
+        // A request for /contact.html does not reach the page at /contact, so the redirect is needed.
+        Assert.Equal(PlanOutcome.Add, PlanOne("/contact.html", "/over-ons").Outcome);
+    }
+
+    [Fact]
+    public void Old_url_that_is_the_target_page_is_skipped_as_existing_page()
+    {
+        var row = PlanOne("/contact", "/contact");
+
+        Assert.Equal((PlanOutcome.Skip, PlanReason.PageExistsAtPath), (row.Outcome, row.Reason));
     }
 
     [Fact]
@@ -202,12 +225,12 @@ public class RedirectPlannerTests
     }
 
     [Fact]
-    public void Same_old_and_new_path_is_skipped()
+    public void Same_old_and_new_path_is_skipped_as_existing_page()
     {
         var row = PlanOne("https://oud.klant.nl/Over-Ons/", "https://www.klant.nl/over-ons");
 
         Assert.Equal(PlanOutcome.Skip, row.Outcome);
-        Assert.Equal(PlanReason.SameAsTarget, row.Reason);
+        Assert.Equal(PlanReason.PageExistsAtPath, row.Reason);
         Assert.Equal(About.Key, row.PageKey);
     }
 
@@ -216,19 +239,22 @@ public class RedirectPlannerTests
     {
         var plan = Plan(
             new CsvRow(2, "/oud/team.html", "/bestaat-niet"),
-            new CsvRow(3, "https://oud.klant.nl/Oud/Team/", "/over-ons"),
-            new CsvRow(4, "/oud/team", "/contact"),
-            new CsvRow(5, "/oud/anders", "/contact"));
+            new CsvRow(3, "https://oud.klant.nl/Oud/Team.html?x=1", "/over-ons"),
+            new CsvRow(4, "https://oud.klant.nl/Oud/Team/", "/over-ons"),
+            new CsvRow(5, "/oud/team", "/contact"),
+            new CsvRow(6, "/oud/anders", "/contact"));
 
         Assert.Equal(
             [
                 (2, PlanOutcome.Error, PlanReason.NotPublished),
                 (3, PlanOutcome.Skip, PlanReason.Duplicate),
-                (4, PlanOutcome.Skip, PlanReason.Duplicate),
-                (5, PlanOutcome.Add, PlanReason.None),
+                (4, PlanOutcome.Add, PlanReason.None),
+                (5, PlanOutcome.Skip, PlanReason.Duplicate),
+                (6, PlanOutcome.Add, PlanReason.None),
             ],
             plan.Rows.Select(r => (r.RowNumber, r.Outcome, r.Reason)));
-        Assert.Equal("/oud/team", plan.Rows[1].OldPath);
+        Assert.Equal("/oud/team.html", plan.Rows[1].OldPath);
+        Assert.Equal("/oud/team", plan.Rows[2].OldPath);
     }
 
     [Theory]

@@ -166,9 +166,12 @@ public static class SiteCatalogRules
             ? hosts
             : site.DomainsByCulture.FirstOrDefault(p => string.Equals(p.Key, culture, StringComparison.OrdinalIgnoreCase)).Value;
 
-    /// <summary>True when a page is published at the normalized form of <paramref name="path"/>.</summary>
+    /// <summary>
+    /// True when a request for <paramref name="path"/> reaches a published page: compares request paths
+    /// (<see cref="UrlNormalizer.RoutePath"/>), so "/about.html" is not the page at "/about".
+    /// </summary>
     public static bool IsPublishedPath(IReadOnlyList<SitePage> pages, string path) =>
-        UrlNormalizer.Normalize(path) is { } normalized && IndexOf(pages).ByPath.ContainsKey(normalized);
+        UrlNormalizer.RoutePath(path) is { } routePath && IndexOf(pages).ByRoutePath.ContainsKey(routePath);
 
     /// <summary>The lower-case host of an Umbraco domain name ("www.klant.nl", "klant.nl/en", "https://klant.nl").</summary>
     internal static string? HostOfDomain(string domainName)
@@ -237,12 +240,15 @@ public static class SiteCatalogRules
             {
                 ByKey.TryAdd(page.Key, page);
                 ByPath.TryAdd(UrlNormalizer.Normalize(page.Path) ?? page.Path, page);
+                ByRoutePath.TryAdd(UrlNormalizer.RoutePath(page.Path) ?? page.Path, page);
             }
         }
 
         public Dictionary<Guid, SitePage> ByKey { get; } = new();
 
         public Dictionary<string, SitePage> ByPath { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, SitePage> ByRoutePath { get; } = new(StringComparer.Ordinal);
     }
 }
 

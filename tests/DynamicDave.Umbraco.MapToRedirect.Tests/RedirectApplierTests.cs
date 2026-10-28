@@ -46,14 +46,14 @@ public class RedirectApplierTests
         var result = Apply(plan);
 
         Assert.Equal(About.Key, _store.Effective("1057/oud/wie", Culture)?.PageKey);
-        Assert.Equal(Contact.Key, _store.Effective("1057/contact-us", Culture)?.PageKey);
+        Assert.Equal(Contact.Key, _store.Effective("1057/contact-us.php", Culture)?.PageKey);
         Assert.All(_store.Entries, e => Assert.Equal(Culture, e.Culture));
 
         Assert.Equal(new ImportCounts(2, 0, 0, 0, 0, 0), result.Counts);
         Assert.Equal(
             [
                 new ImportRowRecord(2, "1057/oud/wie", Culture, ApplyOutcome.Added, About.Key, null, null, "/oud/wie", "/over-ons", null),
-                new ImportRowRecord(3, "1057/contact-us", Culture, ApplyOutcome.Added, Contact.Key, null, null, "https://oud.klant.nl/contact-us.php", Contact.Key.ToString(), null),
+                new ImportRowRecord(3, "1057/contact-us.php", Culture, ApplyOutcome.Added, Contact.Key, null, null, "https://oud.klant.nl/contact-us.php", Contact.Key.ToString(), null),
             ],
             result.Rows);
 

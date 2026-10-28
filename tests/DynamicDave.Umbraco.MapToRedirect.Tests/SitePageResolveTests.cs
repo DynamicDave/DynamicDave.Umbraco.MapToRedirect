@@ -155,9 +155,11 @@ public class SitePageResolveTests
 
     [Theory]
     [InlineData("/over-ons", true)]
-    [InlineData("/Over-Ons/Team.html", true)]
+    [InlineData("/Over-Ons/Team/", true)]
+    [InlineData("/Over-Ons/Team.html", false)]
+    [InlineData("/over-ons/index.html", false)]
     [InlineData("/", true)]
     [InlineData("/bestaat-niet", false)]
-    public void IsPublishedPath_compares_normalized_paths(string path, bool expected) =>
+    public void IsPublishedPath_compares_request_paths(string path, bool expected) =>
         Assert.Equal(expected, SiteCatalogRules.IsPublishedPath(Pages, path));
 }
