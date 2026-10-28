@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://localhost:44416/old-site/sitemap-index.xml
