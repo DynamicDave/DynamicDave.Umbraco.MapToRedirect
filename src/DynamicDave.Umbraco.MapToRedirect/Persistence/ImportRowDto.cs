@@ -48,6 +48,11 @@ public class ImportRowDto
     [NullSetting(NullSetting = NullSettings.Null)]
     public DateTime? ReplacedCreateDateUtc { get; set; }
 
+    /// <summary>The replaced redirect was culture-less (all languages); it was kept and only overridden.</summary>
+    [Column("replacedAllCultures")]
+    [Constraint(Default = "0")]
+    public bool ReplacedAllCultures { get; set; }
+
     [Column("oldUrl")]
     [SpecialDbType(SpecialDbTypes.NVARCHARMAX)]
     [NullSetting(NullSetting = NullSettings.Null)]

@@ -29,6 +29,10 @@ public sealed record ImportRecord(
     DateTime? UndoneUtc,
     string? UndoneBy);
 
+/// <summary>
+/// A row of an import. For a Replaced row, <see cref="ReplacedAllCultures"/> is true when the replaced redirect was
+/// culture-less (all languages): it was kept, and the added redirect of the culture overrides it.
+/// </summary>
 public sealed record ImportRowRecord(
     int RowNumber,
     string OldRoute,
@@ -39,7 +43,8 @@ public sealed record ImportRowRecord(
     DateTime? ReplacedCreateDateUtc,
     string? OldUrl,
     string? NewUrl,
-    string? Message);
+    string? Message,
+    bool ReplacedAllCultures = false);
 
 public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
 {
@@ -81,6 +86,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
             NewPageKey = row.NewPageKey,
             ReplacedPageKey = row.ReplacedPageKey,
             ReplacedCreateDateUtc = row.ReplacedCreateDateUtc,
+            ReplacedAllCultures = row.ReplacedAllCultures,
             OldUrl = row.OldUrl,
             NewUrl = row.NewUrl,
             Message = row.Message,
@@ -221,5 +227,6 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
         dto.ReplacedCreateDateUtc is { } created ? DateTime.SpecifyKind(created, DateTimeKind.Utc) : null,
         dto.OldUrl,
         dto.NewUrl,
-        dto.Message);
+        dto.Message,
+        dto.ReplacedAllCultures);
 }
