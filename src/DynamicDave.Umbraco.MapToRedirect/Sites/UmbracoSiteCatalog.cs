@@ -50,22 +50,16 @@ public sealed class UmbracoSiteCatalog(
 
             // Sync over async: the catalog is used from background jobs and request handlers without a
             // synchronization context.
-            var domains = domainService.GetAssignedDomainsAsync(rootKey, false).GetAwaiter().GetResult()
-                .Where(d => !d.IsWildcard)
+            // Wildcard domains are included: they carry no host but set the site's culture.
+            var assigned = domainService.GetAssignedDomainsAsync(rootKey, true).GetAwaiter().GetResult()
                 .OrderBy(d => d.SortOrder)
-                .ToList();
+                .Select(d => new SiteDomain(d.DomainName, d.IsWildcard, d.LanguageIsoCode));
 
-            var hosts = domains.Select(d => SiteCatalogRules.HostOfDomain(d.DomainName)).OfType<string>()
-                .Distinct(StringComparer.Ordinal).ToList();
-            var cultures = domains.Select(d => d.LanguageIsoCode).OfType<string>().Where(c => c.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (cultures.Count == 0)
-            {
-                defaultCulture ??= languageService.GetDefaultIsoCodeAsync().GetAwaiter().GetResult();
-                cultures.Add(defaultCulture);
-            }
+            var domains = SiteCatalogRules.BuildDomains(
+                assigned,
+                () => defaultCulture ??= languageService.GetDefaultIsoCodeAsync().GetAwaiter().GetResult());
 
-            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), hosts, cultures));
+            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), domains.Domains, domains.Cultures, domains.DomainsByCulture));
         }
 
         return sites;
@@ -91,7 +85,7 @@ public sealed class UmbracoSiteCatalog(
     }
 
     public SitePage? Resolve(SiteInfo site, string culture, IReadOnlyList<SitePage> pages, string newUrl) =>
-        SiteCatalogRules.Resolve(site, pages, newUrl);
+        SiteCatalogRules.Resolve(site, culture, pages, newUrl);
 
     public bool IsPublishedPath(IReadOnlyList<SitePage> pages, string path) => SiteCatalogRules.IsPublishedPath(pages, path);
 
@@ -136,11 +130,11 @@ public static class SiteCatalogRules
     private static readonly ConditionalWeakTable<IReadOnlyList<SitePage>, PageIndex> Indexes = new();
 
     /// <summary>
-    /// Resolves a "New URL": a document key, a full URL whose host is one of the site's domains, or a path. Returns
-    /// null when the value is empty or invalid, the host belongs to another site, or no page in
-    /// <paramref name="pages"/> matches.
+    /// Resolves a "New URL": a document key, a full URL whose host is a domain of the site in
+    /// <paramref name="culture"/>, or a path. Returns null when the value is empty or invalid, the host is not a
+    /// domain of the site in that culture, or no page in <paramref name="pages"/> (the pages of that culture) matches.
     /// </summary>
-    public static SitePage? Resolve(SiteInfo site, IReadOnlyList<SitePage> pages, string newUrl)
+    public static SitePage? Resolve(SiteInfo site, string culture, IReadOnlyList<SitePage> pages, string newUrl)
     {
         var value = newUrl.Trim();
         if (value.Length == 0) return null;
@@ -151,15 +145,26 @@ public static class SiteCatalogRules
             return index.ByKey.GetValueOrDefault(key);
         }
 
-        if (UrlNormalizer.HostOf(value) is not null && !HostBelongsTo(site, value)) return null;
+        if (UrlNormalizer.HostOf(value) is not null && !HostBelongsTo(site, culture, value)) return null;
 
         var path = UrlNormalizer.Normalize(value);
         return path is null ? null : index.ByPath.GetValueOrDefault(path);
     }
 
-    /// <summary>True when the value is an absolute http(s) URL whose host is one of the site's domains.</summary>
-    public static bool HostBelongsTo(SiteInfo site, string url) =>
-        UrlNormalizer.HostOf(url) is { } host && site.Domains.Contains(host, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// True when the value is an absolute http(s) URL whose host is a domain of the site in <paramref name="culture"/>.
+    /// A host of the same site in another culture does not belong: its pages are not the selected culture's pages.
+    /// </summary>
+    public static bool HostBelongsTo(SiteInfo site, string culture, string url) =>
+        UrlNormalizer.HostOf(url) is { } host
+        && HostsOf(site, culture) is { } hosts
+        && hosts.Contains(host, StringComparer.OrdinalIgnoreCase);
+
+    // DomainsByCulture is built case-insensitive, but a hand-built SiteInfo may use any comparer.
+    private static IReadOnlyList<string>? HostsOf(SiteInfo site, string culture) =>
+        site.DomainsByCulture.TryGetValue(culture, out var hosts)
+            ? hosts
+            : site.DomainsByCulture.FirstOrDefault(p => string.Equals(p.Key, culture, StringComparison.OrdinalIgnoreCase)).Value;
 
     /// <summary>True when a page is published at the normalized form of <paramref name="path"/>.</summary>
     public static bool IsPublishedPath(IReadOnlyList<SitePage> pages, string path) =>
@@ -171,6 +176,37 @@ public static class SiteCatalogRules
         var value = domainName.Trim();
         if (value.Length == 0) return null;
         return UrlNormalizer.HostOf(value.Contains("://", StringComparison.Ordinal) ? value : "http://" + value);
+    }
+
+    /// <summary>
+    /// Derives a site's hosts and cultures from its domains (in sort order). Wildcard domains have no host but their
+    /// culture counts; a site without any domain gets <paramref name="defaultCulture"/>.
+    /// </summary>
+    internal static SiteDomains BuildDomains(IEnumerable<SiteDomain> domains, Func<string> defaultCulture)
+    {
+        var hosts = new List<string>();
+        var cultures = new List<string>();
+        var byCulture = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var domain in domains)
+        {
+            var culture = string.IsNullOrWhiteSpace(domain.Culture) ? null : domain.Culture.Trim();
+            if (culture is not null && !cultures.Contains(culture, StringComparer.OrdinalIgnoreCase)) cultures.Add(culture);
+
+            if (domain.IsWildcard || HostOfDomain(domain.DomainName) is not { } host) continue;
+            if (!hosts.Contains(host)) hosts.Add(host);
+            if (culture is null) continue;
+
+            if (!byCulture.TryGetValue(culture, out var cultureHosts)) byCulture[culture] = cultureHosts = [];
+            if (!cultureHosts.Contains(host)) cultureHosts.Add(host);
+        }
+
+        if (cultures.Count == 0) cultures.Add(defaultCulture());
+
+        return new SiteDomains(
+            hosts,
+            cultures,
+            byCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase));
     }
 
     // Lookups run once per CSV row against the same page list, so the list is indexed once and the index lives as
@@ -193,3 +229,12 @@ public static class SiteCatalogRules
         public Dictionary<string, SitePage> ByPath { get; } = new(StringComparer.Ordinal);
     }
 }
+
+/// <summary>A domain assigned to a site root: its name, whether it is a wildcard ("*1057") and its culture.</summary>
+internal record SiteDomain(string DomainName, bool IsWildcard, string? Culture);
+
+/// <summary>The hosts and cultures of a site, derived from its domains.</summary>
+internal record SiteDomains(
+    IReadOnlyList<string> Domains,
+    IReadOnlyList<string> Cultures,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> DomainsByCulture);
