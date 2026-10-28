@@ -33,19 +33,31 @@ public class UmbracoRedirectStoreTests
 
         var redirect = Assert.Single(found);
         var newest = _service.Rows.Single(r => r.ContentKey == PageB);
-        Assert.Equal(new ExistingRedirect(newest.Key, PageB, newest.CreateDateUtc), redirect);
+        Assert.Equal(new ExistingRedirect(newest.Key, PageB, newest.CreateDateUtc, false), redirect);
     }
 
-    // Observed: GetMostRecentRedirectUrl falls back to a culture-less row (Umbraco's own tracking writes culture ''
-    // for invariant pages); Find only reports rows of the exact culture.
+    // Observed: Umbraco's own tracking writes culture '' for invariant pages, and GetMostRecentRedirectUrl falls back
+    // to such a row when the culture has none. That row is in effect for every culture.
     [Theory]
     [InlineData("")]
     [InlineData(null)]
-    public void Find_ignores_culture_less_rows(string? culture)
+    public void Find_returns_a_culture_less_redirect_for_all_cultures(string? culture)
     {
         _service.Register("1057/oud", PageA, culture);
 
-        Assert.Empty(Store.Find("1057/oud", "nl-NL"));
+        var redirect = Assert.Single(Store.Find("1057/oud", "nl-NL"));
+        Assert.Equal(PageA, redirect.PageKey);
+        Assert.True(redirect.AllCultures);
+    }
+
+    [Fact]
+    public void Find_prefers_the_culture_over_a_newer_culture_less_redirect()
+    {
+        _service.Register("1057/oud", PageA, "nl-NL");
+        _service.Register("1057/oud", PageB, "");
+
+        var redirect = Assert.Single(Store.Find("1057/oud", "nl-NL"));
+        Assert.Equal((PageA, false), (redirect.PageKey, redirect.AllCultures));
     }
 
     [Fact]
@@ -58,19 +70,31 @@ public class UmbracoRedirectStoreTests
     }
 
     [Fact]
-    public void RemoveAll_deletes_every_row_of_the_route_and_culture_only()
+    public void RemoveExact_deletes_every_row_of_the_route_and_culture_only()
     {
         _service.Register("1057/oud", PageA, "nl-NL");
         _service.Register("1057/oud", PageB, "nl-nl");
         _service.Register("1057/oud", PageA, string.Empty);
+        _service.Register("1057/oud", PageB, null);
         _service.Register("1057/oud", PageA, "de-DE");
         _service.Register("1057/ander", PageA, "nl-NL");
 
-        Store.RemoveAll("1057/oud", "nl-NL");
+        Store.RemoveExact("1057/oud", "nl-NL");
 
         Assert.Equal(2, _service.Deleted.Count);
         Assert.Equal(
-            [("1057/oud", ""), ("1057/oud", "de-DE"), ("1057/ander", "nl-NL")],
-            _service.Rows.Select(r => (r.Url, r.Culture ?? "")));
+            [("1057/oud", ""), ("1057/oud", "(null)"), ("1057/oud", "de-DE"), ("1057/ander", "nl-NL")],
+            _service.Rows.Select(r => (r.Url, r.Culture ?? "(null)")));
+    }
+
+    [Fact]
+    public void RemoveExact_keeps_a_culture_less_redirect()
+    {
+        _service.Register("1057/oud", PageA, string.Empty);
+
+        Store.RemoveExact("1057/oud", "nl-NL");
+
+        Assert.Empty(_service.Deleted);
+        Assert.Single(_service.Rows);
     }
 }

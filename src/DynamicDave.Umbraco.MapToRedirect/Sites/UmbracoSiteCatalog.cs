@@ -59,7 +59,7 @@ public sealed class UmbracoSiteCatalog(
                 assigned,
                 () => defaultCulture ??= languageService.GetDefaultIsoCodeAsync().GetAwaiter().GetResult());
 
-            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), domains.Domains, domains.Cultures, domains.DomainsByCulture));
+            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), domains.Domains, domains.Cultures, domains.DomainsByCulture, domains.PathPrefixesByCulture));
         }
 
         return sites;
@@ -178,6 +178,16 @@ public static class SiteCatalogRules
         return UrlNormalizer.HostOf(value.Contains("://", StringComparison.Ordinal) ? value : "http://" + value);
     }
 
+    /// <summary>The normalized path of an Umbraco domain name ("klant.nl/en" gives "/en"); null when it has none.</summary>
+    internal static string? PathPrefixOfDomain(string domainName)
+    {
+        var value = domainName.Trim();
+        if (value.Length == 0) return null;
+        var url = value.Contains("://", StringComparison.Ordinal) ? value : "http://" + value;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
+        return UrlNormalizer.Normalize(uri.AbsolutePath) is { } path && path != "/" ? path : null;
+    }
+
     /// <summary>
     /// Derives a site's hosts and cultures from its domains (in sort order). Wildcard domains have no host but their
     /// culture counts; a site without any domain gets <paramref name="defaultCulture"/>.
@@ -187,6 +197,7 @@ public static class SiteCatalogRules
         var hosts = new List<string>();
         var cultures = new List<string>();
         var byCulture = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var prefixesByCulture = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var domain in domains)
         {
@@ -199,6 +210,10 @@ public static class SiteCatalogRules
 
             if (!byCulture.TryGetValue(culture, out var cultureHosts)) byCulture[culture] = cultureHosts = [];
             if (!cultureHosts.Contains(host)) cultureHosts.Add(host);
+
+            if (PathPrefixOfDomain(domain.DomainName) is not { } prefix) continue;
+            if (!prefixesByCulture.TryGetValue(culture, out var prefixes)) prefixesByCulture[culture] = prefixes = [];
+            if (!prefixes.Contains(prefix)) prefixes.Add(prefix);
         }
 
         if (cultures.Count == 0) cultures.Add(defaultCulture());
@@ -206,7 +221,8 @@ public static class SiteCatalogRules
         return new SiteDomains(
             hosts,
             cultures,
-            byCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase));
+            byCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase),
+            prefixesByCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase));
     }
 
     // Lookups run once per CSV row against the same page list, so the list is indexed once and the index lives as
@@ -237,4 +253,5 @@ internal record SiteDomain(string DomainName, bool IsWildcard, string? Culture);
 internal record SiteDomains(
     IReadOnlyList<string> Domains,
     IReadOnlyList<string> Cultures,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> DomainsByCulture);
+    IReadOnlyDictionary<string, IReadOnlyList<string>> DomainsByCulture,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> PathPrefixesByCulture);

@@ -37,7 +37,7 @@ public class RedirectPlannerTests
 
         Assert.Equal(
             new PlanRow(2, "https://oud.klant.nl/Oud/Wie-Zijn-Wij.php?x=1", "https://www.klant.nl/over-ons/", "/oud/wie-zijn-wij",
-                "1057/oud/wie-zijn-wij", About.Key, "/over-ons", PlanOutcome.Add, PlanReason.None, null, null),
+                "1057/oud/wie-zijn-wij", About.Key, "/over-ons", PlanOutcome.Add, PlanReason.None, null, null, false),
             row);
     }
 
@@ -81,6 +81,65 @@ public class RedirectPlannerTests
         Assert.Equal(PlanOutcome.Conflict, row.Outcome);
         Assert.Equal(elsewhere, row.CurrentPageKey);
         Assert.Null(row.CurrentPagePath);
+    }
+
+    [Fact]
+    public void Exact_culture_conflict_is_not_for_all_cultures()
+    {
+        _store.Add("1057/oud", Contact.Key, Culture);
+
+        Assert.False(PlanOne("/oud", "/over-ons").CurrentAllCultures);
+    }
+
+    [Fact]
+    public void All_languages_redirect_to_other_page_is_conflict()
+    {
+        _store.Add("1057/oud", Contact.Key, "");
+
+        var row = PlanOne("/oud", "/over-ons");
+
+        Assert.Equal(PlanOutcome.Conflict, row.Outcome);
+        Assert.Equal(Contact.Key, row.CurrentPageKey);
+        Assert.Equal("/contact", row.CurrentPagePath);
+        Assert.True(row.CurrentAllCultures);
+    }
+
+    [Fact]
+    public void All_languages_redirect_to_the_same_page_is_already_present()
+    {
+        _store.Add("1057/oud", About.Key, "");
+
+        var row = PlanOne("/oud", "/over-ons");
+
+        Assert.Equal(PlanOutcome.AlreadyPresent, row.Outcome);
+        Assert.Null(row.CurrentPageKey);
+        Assert.False(row.CurrentAllCultures);
+    }
+
+    [Fact]
+    public void Culture_redirect_overrides_an_all_languages_redirect()
+    {
+        _store.Add("1057/oud", About.Key, Culture);
+        _store.Add("1057/oud", Contact.Key, "");
+
+        Assert.Equal(PlanOutcome.AlreadyPresent, PlanOne("/oud", "/over-ons").Outcome);
+    }
+
+    [Fact]
+    public void Route_drops_the_path_prefix_of_the_culture_domain_but_published_check_uses_the_full_path()
+    {
+        var en = new SitePage(Guid.NewGuid(), "/en/about", "about", "About", null);
+        IReadOnlyList<SitePage> pages = [new(Guid.NewGuid(), "/en", "en", "Home", null), en];
+        var site = new SiteInfo(
+            Guid.NewGuid(), 1061, "Home", ["klant.nl"], ["en-US"],
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"] },
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["/en"] });
+
+        var rows = new RedirectPlanner(_store).Plan(
+            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old-about", "/en/about"), new CsvRow(3, "/en/about", "/en")], site, "en-US", pages).Rows;
+
+        Assert.Equal(("/en/old-about", "1061/old-about", PlanOutcome.Add), (rows[0].OldPath, rows[0].Route, rows[0].Outcome));
+        Assert.Equal((PlanOutcome.Skip, PlanReason.PageExistsAtPath), (rows[1].Outcome, rows[1].Reason));
     }
 
     [Fact]

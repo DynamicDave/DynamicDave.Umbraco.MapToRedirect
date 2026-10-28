@@ -118,6 +118,22 @@ public class SitePageResolveTests
     }
 
     [Fact]
+    public void Domain_path_prefixes_are_grouped_by_culture()
+    {
+        var domains = SiteCatalogRules.BuildDomains(
+            [
+                new("klant.nl", false, "nl"), new("klant.nl/en", false, "en"), new("https://klant.com/EN/", false, "EN"),
+                new("klant.nl/en/uk", false, "en-GB"), new("*1057", true, "de"),
+            ],
+            () => throw new InvalidOperationException("default culture not needed"));
+
+        Assert.False(domains.PathPrefixesByCulture.ContainsKey("nl"));
+        Assert.Equal(["/en"], domains.PathPrefixesByCulture["en"]);
+        Assert.Equal(["/en/uk"], domains.PathPrefixesByCulture["EN-gb"]);
+        Assert.False(domains.PathPrefixesByCulture.ContainsKey("de"));
+    }
+
+    [Fact]
     public void Wildcard_domain_counts_for_cultures_but_not_for_hosts()
     {
         var domains = SiteCatalogRules.BuildDomains([new("*1057", true, "nl-NL")], () => "en-US");

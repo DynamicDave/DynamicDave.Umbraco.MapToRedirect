@@ -31,6 +31,7 @@ public enum PlanReason
 /// <param name="PagePath">The path of the target page.</param>
 /// <param name="CurrentPageKey">For a conflict: the page the route currently redirects to.</param>
 /// <param name="CurrentPagePath">For a conflict: that page's path, when it is a published page of the site.</param>
+/// <param name="CurrentAllCultures">For a conflict: the current redirect is culture-less and serves all languages.</param>
 public record PlanRow(
     int RowNumber,
     string OldUrl,
@@ -42,7 +43,8 @@ public record PlanRow(
     PlanOutcome Outcome,
     PlanReason Reason,
     Guid? CurrentPageKey,
-    string? CurrentPagePath);
+    string? CurrentPagePath,
+    bool CurrentAllCultures);
 
 /// <summary>A test run of an uploaded CSV for one site and culture. <see cref="FileName"/> is at most 255 characters.</summary>
 public record RedirectPlan(Guid Id, Guid RootKey, string Culture, string FileName, IReadOnlyList<PlanRow> Rows);

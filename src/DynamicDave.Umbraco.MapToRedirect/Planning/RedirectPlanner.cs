@@ -31,12 +31,12 @@ public sealed class RedirectPlanner(IRedirectStore store)
     private PlanRow PlanRow(
         CsvRow row, SiteInfo site, string culture, IReadOnlyList<SitePage> pages, Dictionary<Guid, SitePage> byKey, HashSet<string> seen)
     {
-        var result = new PlanRow(row.RowNumber, row.OldUrl, row.NewUrl, null, null, null, null, PlanOutcome.Error, PlanReason.InvalidOldUrl, null, null);
+        var result = new PlanRow(row.RowNumber, row.OldUrl, row.NewUrl, null, null, null, null, PlanOutcome.Error, PlanReason.InvalidOldUrl, null, null, false);
 
         var oldPath = UrlNormalizer.Normalize(row.OldUrl);
         if (oldPath is null) return result;
 
-        result = result with { OldPath = oldPath, Route = RedirectRoute.For(site, oldPath) };
+        result = result with { OldPath = oldPath, Route = RedirectRoute.For(site, culture, oldPath) };
 
         // The first row of an old path wins, whatever its outcome.
         if (!seen.Add(oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.Duplicate);
@@ -67,6 +67,7 @@ public sealed class RedirectPlanner(IRedirectStore store)
         // Umbraco only redirects when no published page exists at the requested path.
         if (SiteCatalogRules.IsPublishedPath(pages, oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.PageExistsAtPath);
 
+        // The redirect in effect may be a culture-less one (all languages); ours would override it for this culture.
         var current = store.Find(result.Route!, culture).FirstOrDefault();
         if (current is null) return Outcome(result, PlanOutcome.Add, PlanReason.None);
         if (current.PageKey == target.Key) return Outcome(result, PlanOutcome.AlreadyPresent, PlanReason.None);
@@ -75,6 +76,7 @@ public sealed class RedirectPlanner(IRedirectStore store)
         {
             CurrentPageKey = current.PageKey,
             CurrentPagePath = byKey.GetValueOrDefault(current.PageKey)?.Path,
+            CurrentAllCultures = current.AllCultures,
         };
     }
 
