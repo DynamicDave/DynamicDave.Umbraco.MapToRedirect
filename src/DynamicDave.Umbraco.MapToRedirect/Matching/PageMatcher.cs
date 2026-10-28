@@ -10,6 +10,7 @@ public class PageMatcher
     private const double TitleThreshold = 0.9;
 
     private readonly Dictionary<string, SitePage> _byPath = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SitePage> _byRoutePath = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<SitePage>> _bySlug = new(StringComparer.Ordinal);
     private readonly List<Entry> _entries;
 
@@ -18,7 +19,8 @@ public class PageMatcher
         _entries = new List<Entry>(pages.Count);
         foreach (var page in pages)
         {
-            _byPath.TryAdd(page.Path, page);
+            _byPath.TryAdd(UrlNormalizer.Normalize(page.Path) ?? page.Path, page);
+            _byRoutePath.TryAdd(UrlNormalizer.RoutePath(page.Path) ?? page.Path, page);
             if (page.Slug.Length > 0)
             {
                 if (!_bySlug.TryGetValue(page.Slug, out var list))
@@ -47,9 +49,16 @@ public class PageMatcher
             return new MatchResult(MatchKind.None, null, MatchNote.None);
         }
 
-        if (_byPath.TryGetValue(path, out var exact))
+        // Exact only when a request for the old URL itself reaches the page; the same page under another file name
+        // ("/contact.html" for "/contact") still needs a redirect.
+        if (UrlNormalizer.RoutePath(oldPath) is { } routePath && _byRoutePath.TryGetValue(routePath, out var exact))
         {
             return new MatchResult(MatchKind.Exact, exact, MatchNote.SamePath);
+        }
+
+        if (_byPath.TryGetValue(path, out var samePage))
+        {
+            return new MatchResult(MatchKind.Likely, samePage, MatchNote.SamePageOtherFileName);
         }
 
         var slug = UrlNormalizer.Slug(path);
@@ -107,13 +116,14 @@ public class PageMatcher
     }
 
     /// <summary>
-    /// Matches on the URL, then lets the old page's title (when known) raise a result that is not Exact to Likely.
+    /// Matches on the URL, then lets the old page's title (when known) raise a result that is not Exact to Likely. Exact and
+    /// same-page results (<see cref="MatchNote.SamePageOtherFileName"/>) are kept as they are.
     /// A missing title keeps the URL result and marks it <see cref="MatchNote.TitleUnavailable"/>.
     /// </summary>
     public MatchResult MatchWithTitle(string oldPath, string? oldTitle)
     {
         var byUrl = Match(oldPath);
-        if (byUrl.Kind == MatchKind.Exact)
+        if (byUrl.Kind == MatchKind.Exact || byUrl.Note == MatchNote.SamePageOtherFileName)
         {
             return byUrl;
         }

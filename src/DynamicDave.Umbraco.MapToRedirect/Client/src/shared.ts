@@ -4,6 +4,7 @@ import type { ApplyOutcome, JobStateModel, PlanOutcome } from './api/index.js';
 
 export const PAGE_SIZE = 25;
 export const POLL_MS = 2000;
+export const MAX_POLL_MS = 10_000;
 
 /** Fired by a tab when it started a job or learned about a running one (409); the dashboard polls it. */
 export const JOB_CHANGED_EVENT = 'dd-map-to-redirect-job-changed';
@@ -244,3 +245,30 @@ export const sharedStyles = css`
     margin-top: var(--uui-size-space-4);
   }
 `;
+
+/** Codes of import row messages (RowMessages on the server); each has a "ddMapToRedirect_rowMessage<Code>" term. */
+const ROW_MESSAGE_CODES = new Set([
+  'PageExistsAtPath',
+  'EmptyNewUrl',
+  'SameAsTarget',
+  'Duplicate',
+  'InvalidOldUrl',
+  'InvalidNewUrl',
+  'NotPublished',
+  'OtherSite',
+  'Skipped',
+  'Error',
+  'SiteRemoved',
+  'TargetUnpublished',
+  'PageAtOldUrl',
+  'ConflictKept',
+  'OverridesAllLanguages',
+  'RedirectRemoved',
+  'RedirectChanged',
+]);
+
+/** The localized message of an import row; the stored English text for an unknown code. */
+export function rowMessage(localize: UmbLocalizationController, row: { message?: string | null; messageCode?: string | null }) {
+  const code = row.messageCode;
+  return code && ROW_MESSAGE_CODES.has(code) ? localize.term(`ddMapToRedirect_rowMessage${code}`) : (row.message ?? '');
+}

@@ -106,11 +106,11 @@ public class ApiMappingTests
             model.Overwrite, new ImportCounts(model.Counts.Added, model.Counts.Replaced, model.Counts.AlreadyPresent, model.Counts.Skipped,
                 model.Counts.Failed, model.Counts.Changed), model.State, model.UndoneUtc, model.UndoneBy));
 
-        var row = new ImportRowRecord(2, "1057/a", "nl-NL", ApplyOutcome.Replaced, Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow, "/a", "/b", "m", true, true);
+        var row = new ImportRowRecord(2, "1057/a", "nl-NL", ApplyOutcome.Replaced, Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow, "/a", "/b", "m", true, true, "ConflictKept");
         var rowModel = ApiMapping.ToModel(row);
         Assert.Equal(row, new ImportRowRecord(rowModel.RowNumber, rowModel.OldRoute, rowModel.Culture, rowModel.Outcome, rowModel.NewPageKey,
             rowModel.ReplacedPageKey, rowModel.ReplacedCreateDateUtc, rowModel.OldUrl, rowModel.NewUrl, rowModel.Message, rowModel.ReplacedAllCultures,
-            rowModel.Undone));
+            rowModel.Undone, rowModel.MessageCode));
     }
 
     [Fact]

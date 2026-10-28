@@ -16,6 +16,7 @@ import {
   jobChanged,
   parseSummary,
   progressTemplate,
+  rowMessage,
   sharedStyles,
 } from './shared.js';
 import type { UndoSummary } from './shared.js';
@@ -135,7 +136,7 @@ export class DdMapToRedirectImportRowsElement extends UmbLitElement {
                 <uui-tag color=${applyOutcomeColor(r.outcome)}>${this.localize.term(applyOutcomeTerm(r.outcome))}</uui-tag>
                 ${r.undone ? html`<uui-tag look="outline">${this.localize.term('ddMapToRedirect_stateUndone')}</uui-tag>` : nothing}
               </uui-table-cell>
-              <uui-table-cell>${r.message ?? ''}</uui-table-cell>
+              <uui-table-cell>${rowMessage(this.localize, r)}</uui-table-cell>
             </uui-table-row>
           `,
         )}

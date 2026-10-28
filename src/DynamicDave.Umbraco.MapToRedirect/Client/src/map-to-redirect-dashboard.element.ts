@@ -4,7 +4,7 @@ import { UMB_CURRENT_USER_CONTEXT } from '@umbraco-cms/backoffice/current-user';
 import type { UUISelectEvent } from '@umbraco-cms/backoffice/external/uui';
 import { MapToRedirectService } from './api/index.js';
 import type { JobStateModel, SiteModel } from './api/index.js';
-import { JOB_CHANGED_EVENT, IMPORTS_CHANGED_EVENT, POLL_MS, isJob, sharedStyles } from './shared.js';
+import { JOB_CHANGED_EVENT, IMPORTS_CHANGED_EVENT, MAX_POLL_MS, POLL_MS, isJob, sharedStyles } from './shared.js';
 import type { JobChangedEvent } from './shared.js';
 import './generate-tab.element.js';
 import './upload-tab.element.js';
@@ -37,6 +37,8 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
   /** Incremented per request so responses of superseded requests are ignored. */
   #jobRequest = 0;
   #pollTimer?: ReturnType<typeof setTimeout>;
+  /** Consecutive failed job requests, for the back-off. */
+  #failures = 0;
   #connected = false;
 
   constructor() {
@@ -95,17 +97,26 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
     clearTimeout(this.#pollTimer);
     let job: JobStateModel | undefined;
     let failed = false;
+    let status: number | undefined;
     try {
-      const { data, error } = await MapToRedirectService.getJob({ throwOnError: false });
+      const { data, error, response } = await MapToRedirectService.getJob({ throwOnError: false });
       failed = error !== undefined;
+      status = response?.status;
       job = isJob(data) ? data : undefined; // 204: there has been no job yet
     } catch {
       failed = true;
     }
     if (requestId !== this.#jobRequest || !this.#connected) return; // stale response or detached
-    if (!failed) this._job = job;
-    // Keep polling while the job runs; a failed request is retried as well.
-    if (failed || job?.status === 'Running') {
+    if (!failed) {
+      this._job = job;
+      this.#failures = 0;
+    }
+    // No access: polling cannot help. Other failures are retried with a growing delay (2, 4, 8, 10 s).
+    if (status === 403) return;
+    if (failed) {
+      this.#failures++;
+      this.#pollTimer = setTimeout(() => void this.#loadJob(), Math.min(POLL_MS * 2 ** (this.#failures - 1), MAX_POLL_MS));
+    } else if (job?.status === 'Running') {
       this.#pollTimer = setTimeout(() => void this.#loadJob(), POLL_MS);
     }
   }

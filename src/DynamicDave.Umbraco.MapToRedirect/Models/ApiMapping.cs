@@ -106,6 +106,7 @@ public static class ApiMapping
         OldUrl = row.OldUrl,
         NewUrl = row.NewUrl,
         Message = row.Message,
+        MessageCode = row.MessageCode,
         ReplacedAllCultures = row.ReplacedAllCultures,
         Undone = row.Undone,
     };

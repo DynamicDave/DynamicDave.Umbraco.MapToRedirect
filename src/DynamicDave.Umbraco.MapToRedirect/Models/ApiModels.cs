@@ -156,6 +156,9 @@ public sealed class ImportRowModel
     public string? OldUrl { get; init; }
     public string? NewUrl { get; init; }
     public string? Message { get; init; }
+
+    /// <summary>Stable code of <see cref="Message"/> (e.g. "PageExistsAtPath"); the dashboard localizes it.</summary>
+    public string? MessageCode { get; init; }
     public bool ReplacedAllCultures { get; init; }
     public bool Undone { get; init; }
 }

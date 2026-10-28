@@ -72,4 +72,10 @@ public class ImportRowDto
     [SpecialDbType(SpecialDbTypes.NVARCHARMAX)]
     [NullSetting(NullSetting = NullSettings.Null)]
     public string? Message { get; set; }
+
+    /// <summary>Stable code of <see cref="Message"/> (RowMessages); the dashboard localizes it.</summary>
+    [Column("messageCode")]
+    [Length(64)]
+    [NullSetting(NullSetting = NullSettings.Null)]
+    public string? MessageCode { get; set; }
 }

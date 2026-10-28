@@ -131,6 +131,7 @@ public sealed class GenerateJob
         MatchNote.SimilarName => "Similar to the page name",
         MatchNote.SimilarTitle => "Similar page title",
         MatchNote.TitleUnavailable => "Old page title could not be read",
+        MatchNote.SamePageOtherFileName => "Same page under another file name; redirect needed",
         _ => string.Empty,
     };
 

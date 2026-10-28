@@ -78,6 +78,21 @@ public class GenerateJobTests
     }
 
     [Fact]
+    public async Task Old_url_with_a_file_name_of_an_existing_page_needs_a_redirect()
+    {
+        _http.Text(SitemapUrl, UrlSet("/Contact.html"));
+
+        await Job().RunAsync(SitemapUrl, MatchMethod.Url, Site.RootKey, Culture, Progress(), default);
+
+        Assert.Equal(
+            [
+                ["Old URL", "New URL", "Match", "Note"],
+                ["/contact.html", "/contact", "Likely", "Same page under another file name; redirect needed"],
+            ],
+            Rows(Assert.Single(_stored).Content));
+    }
+
+    [Fact]
     public async Task File_name_has_site_slug_culture_and_utc_time()
     {
         _http.Text(SitemapUrl, UrlSet("/contact"));

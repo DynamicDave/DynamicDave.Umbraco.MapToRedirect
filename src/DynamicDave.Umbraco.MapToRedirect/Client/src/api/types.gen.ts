@@ -60,6 +60,7 @@ export type ImportRowModel = {
     oldUrl?: string | null;
     newUrl?: string | null;
     message?: string | null;
+    messageCode?: string | null;
     replacedAllCultures: boolean;
     undone: boolean;
 };

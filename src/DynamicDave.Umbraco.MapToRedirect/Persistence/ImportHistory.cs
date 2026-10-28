@@ -49,7 +49,8 @@ public sealed record ImportRowRecord(
     string? NewUrl,
     string? Message,
     bool ReplacedAllCultures = false,
-    bool Undone = false);
+    bool Undone = false,
+    string? MessageCode = null);
 
 public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
 {
@@ -96,6 +97,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
             OldUrl = row.OldUrl,
             NewUrl = row.NewUrl,
             Message = row.Message,
+            MessageCode = row.MessageCode,
         });
         scope.Complete();
     }
@@ -248,5 +250,6 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
         dto.NewUrl,
         dto.Message,
         dto.ReplacedAllCultures,
-        dto.Undone);
+        dto.Undone,
+        dto.MessageCode);
 }

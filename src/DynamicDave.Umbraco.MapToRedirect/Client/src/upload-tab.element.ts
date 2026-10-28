@@ -52,10 +52,12 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
   #appliedPlans = new Set<string>();
   #watching?: string;
   #rowsRequest = 0;
+  #uploadRequest = 0;
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.#rowsRequest++;
+    this.#uploadRequest++;
   }
 
   protected override willUpdate(changed: PropertyValues<this>) {
@@ -78,6 +80,8 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
 
   #clearPlan() {
     this.#rowsRequest++;
+    this.#uploadRequest++; // an upload in flight belongs to the previous selection
+    this._uploading = false;
     this._plan = undefined;
     this._rows = [];
     this._total = 0;
@@ -97,6 +101,7 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
     input.value = ''; // the same file can be chosen again
     if (!file || !this.site || !this.culture) return;
     this.#clearPlan();
+    const requestId = ++this.#uploadRequest;
     this._message = undefined;
     this._uploading = true;
     try {
@@ -105,6 +110,7 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
         body: { file },
         query: { rootKey: this.site.rootKey, culture: this.culture },
       });
+      if (requestId !== this.#uploadRequest) return; // stale: the selection changed or a newer upload started
       if (data && 'planId' in data) {
         this._plan = data;
         this._rows = data.firstPage.items;
@@ -113,9 +119,11 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
         this._message = this.localize.term(errorTerm(errorCode(error)));
       }
     } catch {
+      if (requestId !== this.#uploadRequest) return;
       this._message = this.localize.term('ddMapToRedirect_loadFailed');
+    } finally {
+      if (requestId === this.#uploadRequest) this._uploading = false;
     }
-    this._uploading = false;
   }
 
   async #loadRows() {
@@ -182,8 +190,11 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
       return; // cancelled
     }
     if (this.#appliedPlans.has(plan.planId)) return;
+    // Marked before the request: a stored plan stays applicable, so Apply must not come back while the outcome is unknown.
+    this.#appliedPlans.add(plan.planId);
     this._applying = true;
     this._message = undefined;
+    const requestedUtc = Date.now();
     try {
       const { data, error, response } = await MapToRedirectService.applyPlan({
         throwOnError: false,
@@ -191,23 +202,47 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
         body: { overwrite: this._overwrite },
       });
       if (isJob(data)) {
-        this.#appliedPlans.add(plan.planId);
-        this.#watching = data.id;
-        this._applied = undefined;
-        this.dispatchEvent(jobChanged(data));
+        this.#startedApply(data);
       } else if (response?.status === 404) {
         this.#clearPlan();
         this._message = this.localize.term('ddMapToRedirect_planExpired');
       } else if (response?.status === 409) {
+        // Another job runs: this apply did not start.
+        this.#appliedPlans.delete(plan.planId);
         if (isJob(error)) this.dispatchEvent(jobChanged(error));
         else this._message = this.localize.term('ddMapToRedirect_jobRunning');
       } else {
         this._message = this.localize.term(errorTerm(errorCode(error)));
+        await this.#recheckApply(plan.planId, requestedUtc);
       }
     } catch {
       this._message = this.localize.term('ddMapToRedirect_loadFailed');
+      await this.#recheckApply(plan.planId, requestedUtc);
     }
     this._applying = false;
+  }
+
+  #startedApply(job: JobStateModel) {
+    this.#watching = job.id;
+    this._applied = undefined;
+    this.dispatchEvent(jobChanged(job));
+  }
+
+  /**
+   * After an unclear answer the apply may have started anyway: an Apply job of this user that started after the request
+   * is taken as ours (keeps Apply disabled); otherwise Apply is offered again.
+   */
+  async #recheckApply(planId: string, requestedUtc: number) {
+    let job: JobStateModel | undefined;
+    try {
+      const { data } = await MapToRedirectService.getJob({ throwOnError: false });
+      job = isJob(data) ? data : undefined;
+    } catch {
+      return; // still unknown: keep Apply disabled for this plan
+    }
+    const ours = job?.kind === 'Apply' && job.userKey === this.userKey && Date.parse(job.startedUtc) >= requestedUtc - 60_000;
+    if (ours && job) this.#startedApply(job);
+    else this.#appliedPlans.delete(planId);
   }
 
   async #downloadReport() {
@@ -238,7 +273,7 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
         <uui-button
           look="primary"
           label=${this.localize.term('ddMapToRedirect_chooseFile')}
-          ?disabled=${!this.site || !this.culture}
+          ?disabled=${!this.site || !this.culture || this._uploading}
           .state=${this._uploading ? 'waiting' : undefined}
           @click=${this.#chooseFile}></uui-button>
         ${this._plan ? html`<span class="muted">${this._plan.fileName}</span>` : nothing}

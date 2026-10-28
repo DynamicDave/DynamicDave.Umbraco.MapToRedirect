@@ -20,6 +20,31 @@ public class PageMatcherTests
         Assert.Same(page, result.Page);
     }
 
+    [Theory]
+    [InlineData("/over-ons/team.html")]
+    [InlineData("/Over-Ons/Team/index.php")]
+    public void Same_page_under_another_file_name_is_likely(string oldPath)
+    {
+        var page = Page("/over-ons/team");
+        var result = new PageMatcher([page, Page("/contact")]).Match(oldPath);
+
+        Assert.Equal(MatchKind.Likely, result.Kind);
+        Assert.Equal(MatchNote.SamePageOtherFileName, result.Note);
+        Assert.Same(page, result.Page);
+    }
+
+    [Fact]
+    public void Same_page_under_another_file_name_keeps_its_note_with_titles()
+    {
+        var page = Page("/contact");
+        var matcher = new PageMatcher([page, Page("/team", name: "Ons team")]);
+
+        Assert.Equal((MatchKind.Likely, MatchNote.SamePageOtherFileName), Kind(matcher.MatchWithTitle("/contact.html", null)));
+        Assert.Equal((MatchKind.Likely, MatchNote.SamePageOtherFileName), Kind(matcher.MatchWithTitle("/contact.html", "Ons team")));
+    }
+
+    private static (MatchKind, MatchNote) Kind(MatchResult result) => (result.Kind, result.Note);
+
     [Fact]
     public void Unique_same_slug_is_likely()
     {

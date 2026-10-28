@@ -108,6 +108,7 @@ public class RedirectApplierTests
         Assert.Equal(replaced.CreateDateUtc, row.ReplacedCreateDateUtc);
         Assert.True(row.ReplacedAllCultures);
         Assert.NotNull(row.Message);
+        Assert.Equal("OverridesAllLanguages", row.MessageCode);
     }
 
     [Fact]
@@ -124,6 +125,7 @@ public class RedirectApplierTests
         Assert.Equal(ApplyOutcome.Skipped, row.Outcome);
         Assert.Equal(About.Key, row.NewPageKey);
         Assert.Null(row.ReplacedPageKey);
+        Assert.Equal("ConflictKept", row.MessageCode);
         Assert.Equal(new ImportCounts(0, 0, 0, 1, 0, 0), result.Counts);
     }
 
@@ -153,6 +155,7 @@ public class RedirectApplierTests
         var row = Assert.Single(result.Rows);
         Assert.Equal(ApplyOutcome.Changed, row.Outcome);
         Assert.False(string.IsNullOrWhiteSpace(row.Message));
+        Assert.Equal("TargetUnpublished", row.MessageCode);
         Assert.Equal(new ImportCounts(0, 0, 0, 0, 0, 1), result.Counts);
     }
 
@@ -165,7 +168,7 @@ public class RedirectApplierTests
         var result = Apply(plan);
 
         Assert.Empty(_store.Entries);
-        Assert.Equal(ApplyOutcome.Changed, Assert.Single(result.Rows).Outcome);
+        Assert.Equal((ApplyOutcome.Changed, "PageAtOldUrl"), (result.Rows[0].Outcome, result.Rows[0].MessageCode));
     }
 
     [Fact]
@@ -181,6 +184,7 @@ public class RedirectApplierTests
         var row = Assert.Single(result.Rows);
         Assert.Equal(ApplyOutcome.Changed, row.Outcome);
         Assert.False(string.IsNullOrWhiteSpace(row.Message));
+        Assert.Equal("RedirectChanged", row.MessageCode);
     }
 
     [Fact]
@@ -211,6 +215,7 @@ public class RedirectApplierTests
         Assert.Equal(0, _store.FindCalls);
         Assert.Equal([ApplyOutcome.Skipped, ApplyOutcome.Failed, ApplyOutcome.Skipped], result.Rows.Select(r => r.Outcome));
         Assert.All(result.Rows, r => Assert.False(string.IsNullOrWhiteSpace(r.Message)));
+        Assert.Equal(["EmptyNewUrl", "NotPublished", "PageExistsAtPath"], result.Rows.Select(r => r.MessageCode));
         Assert.Equal(new ImportCounts(0, 0, 0, 2, 1, 0), result.Counts);
         Assert.Equal([1, 2, 3], _done);
     }

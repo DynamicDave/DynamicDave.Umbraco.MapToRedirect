@@ -19,6 +19,7 @@ public enum MatchNote
     SimilarName,
     SimilarTitle,
     TitleUnavailable,
+    SamePageOtherFileName,
 }
 
 /// <param name="Page">The matched page; null when <paramref name="Kind"/> is <see cref="MatchKind.None"/>.</param>

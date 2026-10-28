@@ -100,24 +100,24 @@ public sealed class RedirectApplier(
         switch (row.Outcome)
         {
             case PlanOutcome.Skip:
-                return record with { Message = SkipMessage(row.Reason) };
+                return WithMessage(record, SkipCode(row.Reason));
             case PlanOutcome.Error:
-                return record with { Outcome = ApplyOutcome.Failed, Message = ErrorMessage(row.Reason) };
+                return WithMessage(record with { Outcome = ApplyOutcome.Failed }, ErrorCode(row.Reason));
         }
 
         var route = row.Route!;
         var pageKey = row.PageKey!.Value;
 
-        if (site is null) return Changed(record, "The site no longer exists.");
+        if (site is null) return Changed(record, RowMessages.SiteRemoved);
 
         if (catalog.Resolve(site, culture, pages, pageKey.ToString()) is null)
         {
-            return Changed(record, "The target page is no longer published.");
+            return Changed(record, RowMessages.TargetUnpublished);
         }
 
         if (catalog.IsPublishedPath(pages, row.OldPath!))
         {
-            return Changed(record, "A published page now exists at the old URL.");
+            return Changed(record, RowMessages.PageAtOldUrl);
         }
 
         var current = store.Find(route, culture).FirstOrDefault();
@@ -132,46 +132,41 @@ public sealed class RedirectApplier(
             case PlanOutcome.Conflict when current is not null
                                            && current.PageKey == row.CurrentPageKey
                                            && current.AllCultures == row.CurrentAllCultures:
-                if (!overwrite) return record with { Message = "An existing redirect to another page was kept." };
+                if (!overwrite) return WithMessage(record, RowMessages.ConflictKept);
 
                 // A culture-less redirect serves all languages: it is kept, and ours overrides it for this culture.
                 if (!current.AllCultures) store.RemoveExact(route, culture);
                 store.Add(route, pageKey, culture);
-                return record with
+                var replaced = record with
                 {
                     Outcome = ApplyOutcome.Replaced,
                     ReplacedPageKey = current.PageKey,
                     ReplacedCreateDateUtc = current.CreateDateUtc,
                     ReplacedAllCultures = current.AllCultures,
-                    Message = current.AllCultures ? "Overrides a redirect for all languages, which was kept." : null,
                 };
+                return current.AllCultures ? WithMessage(replaced, RowMessages.OverridesAllLanguages) : replaced;
 
             default:
-                return Changed(record, current is null
-                    ? "The existing redirect was removed since the test run."
-                    : "The old URL redirects to another page since the test run.");
+                return Changed(record, current is null ? RowMessages.RedirectRemoved : RowMessages.RedirectChanged);
         }
     }
 
-    private static ImportRowRecord Changed(ImportRowRecord record, string message) =>
-        record with { Outcome = ApplyOutcome.Changed, Message = message };
+    private static ImportRowRecord Changed(ImportRowRecord record, string code) => WithMessage(record with { Outcome = ApplyOutcome.Changed }, code);
 
-    private static string SkipMessage(PlanReason reason) => reason switch
+    // The English text goes to the report CSV; the dashboard localizes the code.
+    private static ImportRowRecord WithMessage(ImportRowRecord record, string code) =>
+        record with { MessageCode = code, Message = RowMessages.English(code) };
+
+    private static string SkipCode(PlanReason reason) => reason switch
     {
-        PlanReason.PageExistsAtPath => "A published page exists at the old URL.",
-        PlanReason.EmptyNewUrl => "The new URL is empty.",
-        PlanReason.SameAsTarget => "The old URL is the URL of the target page.",
-        PlanReason.Duplicate => "The old URL appears earlier in the file.",
-        _ => "Skipped.",
+        PlanReason.PageExistsAtPath or PlanReason.EmptyNewUrl or PlanReason.SameAsTarget or PlanReason.Duplicate => reason.ToString(),
+        _ => RowMessages.Skipped,
     };
 
-    private static string ErrorMessage(PlanReason reason) => reason switch
+    private static string ErrorCode(PlanReason reason) => reason switch
     {
-        PlanReason.InvalidOldUrl => "The old URL is not valid.",
-        PlanReason.InvalidNewUrl => "The new URL is not valid.",
-        PlanReason.NotPublished => "The new URL is not a published page of the site.",
-        PlanReason.OtherSite => "The new URL belongs to another site or language.",
-        _ => "Error.",
+        PlanReason.InvalidOldUrl or PlanReason.InvalidNewUrl or PlanReason.NotPublished or PlanReason.OtherSite => reason.ToString(),
+        _ => RowMessages.Error,
     };
 
     private static ImportCounts Count(IReadOnlyList<ImportRowRecord> rows) => new(
