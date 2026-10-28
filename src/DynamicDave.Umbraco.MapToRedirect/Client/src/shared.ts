@@ -229,6 +229,10 @@ export const sharedStyles = css`
   .muted {
     color: var(--uui-color-text-alt);
   }
+  .table-wrap uui-table {
+    width: max-content;
+    min-width: 100%;
+  }
   .table-wrap {
     overflow-x: auto;
   }

@@ -381,8 +381,12 @@ export class DdMapToRedirectHistoryTabElement extends UmbLitElement {
       h4 {
         margin: var(--uui-size-space-6) 0 0;
       }
+      .row-actions uui-button {
+        display: block;
+        margin: 2px 0;
+      }
       .row-actions {
-        white-space: nowrap;
+        min-width: 5em;
       }
       uui-table-cell uui-tag {
         margin: 1px 0;
