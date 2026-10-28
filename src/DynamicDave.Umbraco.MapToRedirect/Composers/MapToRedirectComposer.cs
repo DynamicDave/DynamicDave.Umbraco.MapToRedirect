@@ -5,6 +5,7 @@ using DynamicDave.Umbraco.MapToRedirect.Jobs;
 using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Planning;
 using DynamicDave.Umbraco.MapToRedirect.Redirects;
+using DynamicDave.Umbraco.MapToRedirect.Security;
 using DynamicDave.Umbraco.MapToRedirect.Sitemaps;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,7 @@ public class MapToRedirectComposer : IComposer
     {
         builder.Services.AddOptions<MapToRedirectOptions>().Configure(options => MapToRedirectOptions.Bind(builder.Config.GetSection(Constants.OptionsSection), options));
 
+        builder.Services.AddSingleton<AccessPolicy>();
         builder.Services.AddScoped<SitemapReader>();
         builder.Services.AddScoped<PageTitleFetcher>();
         builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();

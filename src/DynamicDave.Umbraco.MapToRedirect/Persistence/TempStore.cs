@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
 using Umbraco.Cms.Infrastructure.Persistence;
 using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Extensions;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Persistence;
 
+[JsonConverter(typeof(JsonStringEnumConverter<TempKind>))]
 public enum TempKind
 {
     Plan,

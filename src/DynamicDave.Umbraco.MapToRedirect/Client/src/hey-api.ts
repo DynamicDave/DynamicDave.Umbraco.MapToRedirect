@@ -1,3 +1,4 @@
+import type { CreateClientConfig } from './api/client.gen';
 import { umbHttpClient } from '@umbraco-cms/backoffice/http-client';
 
 /**
@@ -7,11 +8,9 @@ import { umbHttpClient } from '@umbraco-cms/backoffice/http-client';
  * Inherits baseUrl, credentials, auth, and headers from umbHttpClient — which is already
  * configured by the backoffice before extensions load.
  *
- * Typed loosely so the project compiles before `npm run generate-client` has produced src/api.
- *
  * @see https://heyapi.dev/openapi-ts/clients/fetch#configuration
  */
-export const createClientConfig = <T extends object>(config: T): T => ({
+export const createClientConfig: CreateClientConfig = (config) => ({
 	...config,
 	...umbHttpClient.getConfig(),
 });

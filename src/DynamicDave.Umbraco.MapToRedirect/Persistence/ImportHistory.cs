@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using DynamicDave.Umbraco.MapToRedirect.Applying;
 using NPoco;
 using Umbraco.Cms.Infrastructure.Persistence;
@@ -6,6 +7,7 @@ using Umbraco.Extensions;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Persistence;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ImportState>))]
 public enum ImportState
 {
     Applied,

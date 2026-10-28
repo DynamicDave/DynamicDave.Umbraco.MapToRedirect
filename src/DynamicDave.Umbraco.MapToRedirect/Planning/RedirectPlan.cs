@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace DynamicDave.Umbraco.MapToRedirect.Planning;
 
 /// <summary>The outcome of a CSV row in the test run (spec 4.4). Skip and Error rows are never executed.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<PlanOutcome>))]
 public enum PlanOutcome
 {
     Add,
@@ -11,6 +14,7 @@ public enum PlanOutcome
 }
 
 /// <summary>Why a row is skipped or in error; <see cref="None"/> for Add, AlreadyPresent and Conflict.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<PlanReason>))]
 public enum PlanReason
 {
     None,

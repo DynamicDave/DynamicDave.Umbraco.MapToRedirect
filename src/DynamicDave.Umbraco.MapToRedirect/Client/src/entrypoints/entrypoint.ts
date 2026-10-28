@@ -2,11 +2,35 @@ import type {
   UmbEntryPointOnInit,
   UmbEntryPointOnUnload,
 } from "@umbraco-cms/backoffice/extension-api";
+import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
+import { client } from "../api/client.gen.js";
 
-// TODO(api client): once `npm run generate-client` has produced src/api, wire the generated client into the
-// backoffice auth context here (UMB_AUTH_CONTEXT -> authContext.configureClient(client), with the
-// getOpenApiConfiguration() fallback for Umbraco 17.0), exactly as the other DynamicDave packages do.
-export const onInit: UmbEntryPointOnInit = async (_host, _extensionRegistry) => {
+// load up the manifests here
+export const onInit: UmbEntryPointOnInit = async (host, _extensionRegistry) => {
+  // Wire the generated API client into the backoffice auth context.
+  // configureClient() sets baseUrl + credentials, attaches the auth callback
+  // (cookie-based, with automatic token refresh) and binds the default
+  // response interceptors (401 retry, error notifications, etc.).
+  // The framework awaits onInit, so resolving the context here ensures the
+  // client is fully configured before any element in this extension can use it.
+  const authContext = await host.getContext(UMB_AUTH_CONTEXT);
+  if (!authContext) {
+    console.warn("UMB_AUTH_CONTEXT not available — extension API client will not be authenticated");
+    return;
+  }
+  // configureClient() is not available in every supported Umbraco version (it is missing in 17.0).
+  // Older versions fall back to the OpenAPI configuration, which provides the same baseUrl,
+  // credentials and token, without the default response interceptors.
+  if (typeof authContext.configureClient === "function") {
+    authContext.configureClient(client);
+  } else {
+    const config = authContext.getOpenApiConfiguration();
+    client.setConfig({
+      baseUrl: config.base ?? "",
+      credentials: config.credentials ?? "same-origin",
+      auth: config.token,
+    });
+  }
 };
 
 export const onUnload: UmbEntryPointOnUnload = (_host, _extensionRegistry) => {
