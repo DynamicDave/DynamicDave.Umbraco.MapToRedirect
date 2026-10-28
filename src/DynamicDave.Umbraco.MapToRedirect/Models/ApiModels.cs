@@ -8,7 +8,6 @@ namespace DynamicDave.Umbraco.MapToRedirect.Models;
 /// <summary>Stable error codes of the API's 400, 404 and 409 responses (besides the CsvReadError names).</summary>
 public static class ApiErrors
 {
-    public const string NoAccess = "noAccess";
     public const string InvalidPaging = "invalidPaging";
     public const string InvalidFilter = "invalidFilter";
     public const string SiteNotFound = "siteNotFound";
@@ -19,6 +18,7 @@ public static class ApiErrors
     public const string ImportNotFound = "importNotFound";
     public const string AlreadyUndone = "alreadyUndone";
     public const string ResultNotFound = "resultNotFound";
+    public const string NoJobRunning = "noJobRunning";
 }
 
 public sealed class ErrorResponse
@@ -110,6 +110,8 @@ public sealed class JobStateModel
     public TempKind? ResultKind { get; init; }
     public string? Error { get; init; }
     public string? Summary { get; init; }
+    /// <summary>A cancel was requested; the job stops at its next progress write or heartbeat.</summary>
+    public bool CancelRequested { get; init; }
 }
 
 public sealed class ImportCountsModel

@@ -2,9 +2,10 @@ import { css, html, customElement, state, nothing } from '@umbraco-cms/backoffic
 import { UmbLitElement } from '@umbraco-cms/backoffice/lit-element';
 import { UMB_CURRENT_USER_CONTEXT } from '@umbraco-cms/backoffice/current-user';
 import type { UUISelectEvent } from '@umbraco-cms/backoffice/external/uui';
+import { umbConfirmModal } from '@umbraco-cms/backoffice/modal';
 import { MapToRedirectService } from './api/index.js';
 import type { JobStateModel, SiteModel } from './api/index.js';
-import { JOB_CHANGED_EVENT, IMPORTS_CHANGED_EVENT, MAX_POLL_MS, POLL_MS, isJob, sharedStyles } from './shared.js';
+import { JOB_CHANGED_EVENT, IMPORTS_CHANGED_EVENT, MAX_POLL_MS, POLL_MS, errorCode, errorTerm, isJob, sharedStyles } from './shared.js';
 import type { JobChangedEvent } from './shared.js';
 import './generate-tab.element.js';
 import './upload-tab.element.js';
@@ -33,6 +34,8 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
   @state() private _tab: Tab = 'generate';
   @state() private _job?: JobStateModel;
   @state() private _userKey?: string;
+  @state() private _cancelling = false;
+  @state() private _cancelMessage?: string;
 
   /** Incremented per request so responses of superseded requests are ignored. */
   #jobRequest = 0;
@@ -133,6 +136,54 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
     return this.shadowRoot?.querySelector<DdMapToRedirectHistoryTabElement>('dd-map-to-redirect-history-tab') ?? undefined;
   }
 
+  /** Asks the running job (of any user) to stop; it ends as Failed "Cancelled" within a few seconds. */
+  async #cancelJob() {
+    try {
+      await umbConfirmModal(this, {
+        headline: this.localize.term('ddMapToRedirect_cancelJob'),
+        content: this.localize.term('ddMapToRedirect_cancelJobConfirm'),
+        confirmLabel: this.localize.term('ddMapToRedirect_cancelJob'),
+        color: 'danger',
+      });
+    } catch {
+      return; // dismissed
+    }
+    this._cancelling = true;
+    this._cancelMessage = undefined;
+    try {
+      const { data, error, response } = await MapToRedirectService.cancelJob({ throwOnError: false });
+      if (isJob(data)) {
+        this.#setJob(data);
+      } else {
+        // 404: the job ended meanwhile; the next poll shows how.
+        if (response?.status !== 404) this._cancelMessage = this.localize.term(errorTerm(errorCode(error)));
+        void this.#loadJob();
+      }
+    } catch {
+      this._cancelMessage = this.localize.term('ddMapToRedirect_loadFailed');
+    } finally {
+      this._cancelling = false;
+    }
+  }
+
+  #renderJobBar(job: JobStateModel | undefined, busyByOther: boolean) {
+    const running = job?.status === 'Running';
+    const requested = running && job.cancelRequested;
+    return html`<div class="job-bar">
+      ${busyByOther ? html`<uui-tag color="warning">${this.localize.term('ddMapToRedirect_jobBusy', job!.userName)}</uui-tag>` : nothing}
+      ${running
+        ? html`<uui-button
+            look="secondary"
+            color="danger"
+            label=${this.localize.term(requested ? 'ddMapToRedirect_cancellingJob' : 'ddMapToRedirect_cancelJob')}
+            ?disabled=${requested || this._cancelling}
+            .state=${this._cancelling ? 'waiting' : undefined}
+            @click=${this.#cancelJob}></uui-button>`
+        : nothing}
+      ${this._cancelMessage ? html`<span class="error">${this._cancelMessage}</span>` : nothing}
+    </div>`;
+  }
+
   #selectTab(tab: Tab) {
     this._tab = tab;
     // Someone else may have started a job meanwhile.
@@ -152,7 +203,7 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
     return html`
       <uui-box headline=${this.localize.term('ddMapToRedirect_title')}>
         ${this.#renderPickers(site)}
-        ${busyByOther ? html`<p class="busy"><uui-tag color="warning">${this.localize.term('ddMapToRedirect_jobBusy', job.userName)}</uui-tag></p>` : nothing}
+        ${job?.status === 'Running' || this._cancelMessage ? this.#renderJobBar(job, busyByOther) : nothing}
         <uui-tab-group>
           ${TABS.map(
             (t) => html`<uui-tab
@@ -232,6 +283,13 @@ export class DdMapToRedirectDashboardElement extends UmbLitElement {
       .pickers uui-select {
         min-width: 240px;
         margin-right: var(--uui-size-space-4);
+      }
+      .job-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--uui-size-space-4);
+        margin-bottom: var(--uui-size-space-4);
       }
       .panel {
         padding-top: var(--uui-size-space-5);

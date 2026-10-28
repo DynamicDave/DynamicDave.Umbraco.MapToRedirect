@@ -126,12 +126,12 @@ public class MapToRedirectController(
         var overwrite = request.Overwrite;
         var userKey = user.Key;
         var userName = UserName(user);
-        return Started(jobs.TryStart(JobKind.Apply, userKey, userName, (services, progress, _) =>
+        return Started(jobs.TryStart(JobKind.Apply, userKey, userName, (services, progress, ct) =>
         {
             var total = plan.Rows.Count;
             progress.Report(0, total, JobPhases.Applying);
             var result = services.GetRequiredService<RedirectApplier>()
-                .Apply(plan, overwrite, userKey, userName, done => progress.Report(done, total, JobPhases.Applying));
+                .Apply(plan, overwrite, userKey, userName, done => progress.Report(done, total, JobPhases.Applying), ct);
 
             services.GetRequiredService<TempStore>().Put(
                 result.ImportKey, TempKind.Report, ApplyReport.Csv(result.Rows), ApplyReport.FileName(timeProvider.GetUtcNow().UtcDateTime));
@@ -149,6 +149,23 @@ public class MapToRedirectController(
         if (!HasAccess(out _)) return Forbidden();
 
         return jobs.Current() is { } state ? Ok(ApiMapping.ToModel(state)) : NoContent();
+    }
+
+    /// <summary>
+    /// Asks the running job to stop (any user with access); it ends Failed with error "Cancelled" at its next progress
+    /// write or heartbeat. 404 when no job is running.
+    /// </summary>
+    [HttpPost("job/cancel")]
+    [ProducesResponseType<JobStateModel>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    public IActionResult CancelJob()
+    {
+        if (!HasAccess(out _)) return Forbidden();
+
+        return jobs.RequestCancel() is { } state
+            ? Ok(ApiMapping.ToModel(state))
+            : NotFound(new ErrorResponse { Error = ApiErrors.NoJobRunning });
     }
 
     /// <summary>The generated CSV or the apply report of the current user's completed job.</summary>
@@ -211,11 +228,11 @@ public class MapToRedirectController(
         var c = import.Counts;
         var total = c.Added + c.Replaced + c.AlreadyPresent + c.Skipped + c.Failed + c.Changed;
         var userName = UserName(user);
-        return Started(jobs.TryStart(JobKind.Undo, user.Key, userName, (services, progress, _) =>
+        return Started(jobs.TryStart(JobKind.Undo, user.Key, userName, (services, progress, ct) =>
         {
             progress.Report(0, total, JobPhases.Undoing);
             var result = services.GetRequiredService<ImportUndoer>()
-                .Undo(key, userName, done => progress.Report(done, Math.Max(total, done), JobPhases.Undoing));
+                .Undo(key, userName, done => progress.Report(done, Math.Max(total, done), JobPhases.Undoing), ct);
             return Task.FromResult<(Guid?, TempKind?, string?)>((null, null, ApplyReport.Summary(result)));
         }));
     }

@@ -113,6 +113,9 @@ public sealed class GenerateJob
             })
             .ToList();
 
+        // A job cancelled while the rows were built stores nothing.
+        ct.ThrowIfCancellationRequested();
+
         // Stored as text: the BOM is kept as U+FEFF, so the download (UTF-8) starts with it again.
         var content = Encoding.UTF8.GetString(CsvFormat.Write(Header, rows));
         var key = Guid.NewGuid();

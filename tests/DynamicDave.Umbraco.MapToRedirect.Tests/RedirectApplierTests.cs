@@ -241,6 +241,26 @@ public class RedirectApplierTests
     }
 
     [Fact]
+    public void Cancellation_stops_between_rows_and_leaves_the_import_partial()
+    {
+        var plan = Plan(new CsvRow(2, "/a", "/over-ons"), new CsvRow(3, "/b", "/over-ons"), new CsvRow(4, "/c", "/over-ons"));
+        using var cancel = new CancellationTokenSource();
+        var applier = new RedirectApplier(_store, _history, _catalog, _scopes, new FixedTimeProvider(Now), NullLogger<RedirectApplier>.Instance);
+
+        Assert.Throws<OperationCanceledException>(() => applier.Apply(plan, false, UserKey, "Dave", done =>
+        {
+            _done.Add(done);
+            if (done == 1) cancel.Cancel();
+        }, cancel.Token));
+
+        var import = Assert.Single(_history.List(0, 10).Items);
+        Assert.Equal(ImportState.Partial, import.State);
+        Assert.Equal(new ImportCounts(1, 0, 0, 0, 0, 0), import.Counts);
+        Assert.Equal([2], _history.AllRows(import.Key).Select(r => r.RowNumber));
+        Assert.Single(_store.Entries);
+    }
+
+    [Fact]
     public void Import_is_created_partial_and_completed_as_applied()
     {
         var result = Apply(Plan(new CsvRow(2, "/a", "/over-ons")));

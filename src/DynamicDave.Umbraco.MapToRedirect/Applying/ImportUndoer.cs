@@ -19,8 +19,9 @@ public sealed record UndoResult(int Removed, int Restored, int LeftAlone, IReadO
 public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, IScopeProvider scopeProvider, TimeProvider timeProvider)
 {
     /// <param name="onDone">Called after each row with the number of rows done.</param>
+    /// <param name="ct">Checked before each row: cancellation stops between rows with <see cref="OperationCanceledException"/>.</param>
     /// <exception cref="InvalidOperationException">The import does not exist or was already undone.</exception>
-    public UndoResult Undo(Guid importKey, string userName, Action<int> onDone)
+    public UndoResult Undo(Guid importKey, string userName, Action<int> onDone, CancellationToken ct = default)
     {
         var import = history.Get(importKey) ?? throw new InvalidOperationException($"Import {importKey} does not exist.");
         if (import.State == ImportState.Undone) throw new InvalidOperationException($"Import {importKey} was already undone.");
@@ -31,6 +32,8 @@ public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, I
         var done = 0;
         foreach (var row in history.AllRows(importKey))
         {
+            // A cancelled job stops between rows; the rows undone so far stay undone and a later undo does the rest.
+            ct.ThrowIfCancellationRequested();
             // An earlier undo that stopped midway already undid this row.
             if (row.Undone)
             {

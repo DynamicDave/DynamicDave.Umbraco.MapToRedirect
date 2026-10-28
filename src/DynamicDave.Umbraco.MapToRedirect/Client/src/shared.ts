@@ -30,7 +30,6 @@ export function errorCode(error: unknown): string | undefined {
 
 const ERROR_TERMS: Record<string, string> = {
   // API error codes (ApiErrors)
-  noAccess: 'ddMapToRedirect_noAccess',
   siteNotFound: 'ddMapToRedirect_errorSiteNotFound',
   cultureNotFound: 'ddMapToRedirect_errorCultureNotFound',
   sitemapUrlInvalid: 'ddMapToRedirect_errorSitemapUrlInvalid',
@@ -38,9 +37,11 @@ const ERROR_TERMS: Record<string, string> = {
   importNotFound: 'ddMapToRedirect_errorImportNotFound',
   alreadyUndone: 'ddMapToRedirect_errorAlreadyUndone',
   resultNotFound: 'ddMapToRedirect_errorResultNotFound',
+  noJobRunning: 'ddMapToRedirect_errorNoJobRunning',
   // Job error codes
   SiteNotFound: 'ddMapToRedirect_errorSiteNotFound',
   Unexpected: 'ddMapToRedirect_errorUnexpected',
+  Cancelled: 'ddMapToRedirect_errorCancelled',
   // SitemapError
   Unreachable: 'ddMapToRedirect_sitemapErrorUnreachable',
   NotASitemap: 'ddMapToRedirect_sitemapErrorNotASitemap',

@@ -95,6 +95,7 @@ export type JobStateModel = {
     resultKind: TempKind;
     error?: string | null;
     summary?: string | null;
+    cancelRequested: boolean;
 };
 
 export type JobStatus = 'Running' | 'Completed' | 'Failed' | 'Aborted';
@@ -354,6 +355,39 @@ export type GetJobResponses = {
 };
 
 export type GetJobResponse = GetJobResponses[keyof GetJobResponses];
+
+export type CancelJobData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-maptoredirect/api/v1/job/cancel';
+};
+
+export type CancelJobErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+};
+
+export type CancelJobError = CancelJobErrors[keyof CancelJobErrors];
+
+export type CancelJobResponses = {
+    /**
+     * OK
+     */
+    200: JobStateModel;
+};
+
+export type CancelJobResponse = CancelJobResponses[keyof CancelJobResponses];
 
 export type GetJobResultData = {
     body?: never;

@@ -30,12 +30,13 @@ public sealed class RedirectApplier(
     public const int MaxCultureLength = 20;
 
     /// <param name="onDone">Called after each row with the number of rows done.</param>
+    /// <param name="ct">Checked before each row: cancellation stops between rows with <see cref="OperationCanceledException"/>.</param>
     /// <remarks>
     /// The import is created as <see cref="ImportState.Partial"/> and completed as <see cref="ImportState.Applied"/>
     /// at the end, so a process that dies midway leaves an honest state. When a row throws, its change is rolled
     /// back, the counts of the rows done so far are stored (state Partial), and the exception is rethrown.
     /// </remarks>
-    public ApplyResult Apply(RedirectPlan plan, bool overwrite, Guid userKey, string userName, Action<int> onDone)
+    public ApplyResult Apply(RedirectPlan plan, bool overwrite, Guid userKey, string userName, Action<int> onDone, CancellationToken ct = default)
     {
         var site = catalog.GetSite(plan.RootKey);
         var pages = site is null ? [] : catalog.GetPages(site, plan.Culture);
@@ -61,6 +62,8 @@ public sealed class RedirectApplier(
         {
             foreach (var planRow in plan.Rows)
             {
+                // A cancelled job stops between rows: every row is complete or not started.
+                ct.ThrowIfCancellationRequested();
                 using (var scope = scopeProvider.CreateScope())
                 {
                     var row = Execute(planRow, plan.Culture, overwrite, site, pages) with { Culture = culture };

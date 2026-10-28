@@ -117,12 +117,12 @@ public class ApiMappingTests
     public void Job_state_model_mirrors_the_state()
     {
         var state = new JobState(Guid.NewGuid(), JobKind.Undo, JobStatus.Failed, Guid.NewGuid(), "Dave", DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow,
-            3, 9, JobPhases.Undoing, Guid.NewGuid(), TempKind.Report, "Unexpected", "{\"removed\":1}");
+            3, 9, JobPhases.Undoing, Guid.NewGuid(), TempKind.Report, "Unexpected", "{\"removed\":1}", CancelRequested: true);
 
         var model = ApiMapping.ToModel(state);
 
         Assert.Equal(state, new JobState(model.Id, model.Kind, model.Status, model.UserKey, model.UserName, model.StartedUtc, model.HeartbeatUtc,
-            model.CompletedUtc, model.Done, model.Total, model.Phase, model.ResultKey, model.ResultKind, model.Error, model.Summary));
+            model.CompletedUtc, model.Done, model.Total, model.Phase, model.ResultKey, model.ResultKind, model.Error, model.Summary, model.CancelRequested));
     }
 
     [Fact]

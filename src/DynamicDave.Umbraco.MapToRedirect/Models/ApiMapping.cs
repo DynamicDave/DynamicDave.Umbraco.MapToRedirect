@@ -128,6 +128,7 @@ public static class ApiMapping
         ResultKind = state.ResultKind,
         Error = state.Error,
         Summary = state.Summary,
+        CancelRequested = state.CancelRequested,
     };
 
     public static SiteModel ToModel(SiteInfo site) => new()

@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApplyPlanData, ApplyPlanErrors, ApplyPlanResponses, CreatePlanData, CreatePlanErrors, CreatePlanResponses, GenerateData, GenerateErrors, GenerateResponses, GetAccessData, GetAccessErrors, GetAccessResponses, GetImportRowsData, GetImportRowsErrors, GetImportRowsResponses, GetImportsData, GetImportsErrors, GetImportsResponses, GetJobData, GetJobErrors, GetJobResponses, GetJobResultData, GetJobResultErrors, GetJobResultResponses, GetPlanRowsData, GetPlanRowsErrors, GetPlanRowsResponses, GetSitesData, GetSitesErrors, GetSitesResponses, UndoImportData, UndoImportErrors, UndoImportResponses } from './types.gen';
+import type { ApplyPlanData, ApplyPlanErrors, ApplyPlanResponses, CancelJobData, CancelJobErrors, CancelJobResponses, CreatePlanData, CreatePlanErrors, CreatePlanResponses, GenerateData, GenerateErrors, GenerateResponses, GetAccessData, GetAccessErrors, GetAccessResponses, GetImportRowsData, GetImportRowsErrors, GetImportRowsResponses, GetImportsData, GetImportsErrors, GetImportsResponses, GetJobData, GetJobErrors, GetJobResponses, GetJobResultData, GetJobResultErrors, GetJobResultResponses, GetPlanRowsData, GetPlanRowsErrors, GetPlanRowsResponses, GetSitesData, GetSitesErrors, GetSitesResponses, UndoImportData, UndoImportErrors, UndoImportResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -67,6 +67,14 @@ export class MapToRedirectService {
         return (options?.client ?? client).get<GetJobResponses, GetJobErrors, ThrowOnError>({
             security: [{ scheme: 'bearer', type: 'http' }],
             url: '/umbraco/dynamicdave-maptoredirect/api/v1/job',
+            ...options
+        });
+    }
+    
+    public static cancelJob<ThrowOnError extends boolean = false>(options?: Options<CancelJobData, ThrowOnError>): RequestResult<CancelJobResponses, CancelJobErrors, ThrowOnError> {
+        return (options?.client ?? client).post<CancelJobResponses, CancelJobErrors, ThrowOnError>({
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/umbraco/dynamicdave-maptoredirect/api/v1/job/cancel',
             ...options
         });
     }

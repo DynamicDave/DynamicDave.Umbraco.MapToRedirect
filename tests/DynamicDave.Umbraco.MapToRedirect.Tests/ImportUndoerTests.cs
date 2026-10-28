@@ -41,6 +41,28 @@ public class ImportUndoerTests
         new ImportUndoer(_store, _history, _scopes, new FixedTimeProvider(Now)).Undo(key, userName, _done.Add);
 
     [Fact]
+    public void Cancellation_stops_between_rows_and_keeps_the_rows_already_undone()
+    {
+        _store.Add("1057/a", About, Culture);
+        _store.Add("1057/b", Contact, Culture);
+        var key = Import(Added(2, "1057/a", About), Added(3, "1057/b", Contact));
+        using var cancel = new CancellationTokenSource();
+        var undoer = new ImportUndoer(_store, _history, _scopes, new FixedTimeProvider(Now));
+
+        Assert.Throws<OperationCanceledException>(() => undoer.Undo(key, "Eve", done =>
+        {
+            if (done == 1) cancel.Cancel();
+        }, cancel.Token));
+
+        Assert.Equal(["1057/b"], _store.Entries.Select(e => e.Route));
+        Assert.Equal([true, false], _history.AllRows(key).Select(r => r.Undone));
+        Assert.NotEqual(ImportState.Undone, _history.Get(key)!.State);
+
+        // A later undo finishes the rest.
+        Assert.Equal((2, 0), (Undo(key).Removed, _store.Entries.Count));
+    }
+
+    [Fact]
     public void Undo_removes_added_redirects()
     {
         _store.Add("1057/a", About, Culture);

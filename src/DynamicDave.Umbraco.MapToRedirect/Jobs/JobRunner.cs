@@ -22,6 +22,12 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
     /// <summary><see cref="JobState.Error"/> of a job that failed with an unexpected exception (details are in the log).</summary>
     public const string UnexpectedError = "Unexpected";
 
+    /// <summary><see cref="JobState.Error"/> of a job that stopped after a cancel request (<see cref="RequestCancel"/>).</summary>
+    public const string CancelledError = "Cancelled";
+
+    // A running job writes its progress at most every 500 ms, so a few attempts always find a quiet moment.
+    private const int CancelAttempts = 20;
+
     /// <summary>Waits between the attempts of a job's final state write (one attempt plus one retry per delay).</summary>
     internal TimeSpan[] FinalWriteRetryDelays { get; init; } =
         [TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000)];
@@ -96,6 +102,28 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
         }
     }
 
+    /// <summary>
+    /// Asks the running job to stop: stores <see cref="JobState.CancelRequested"/> with compare-and-set, so the request
+    /// reaches the job on whichever server runs it. The job sees it on its next progress write or heartbeat, cancels its
+    /// token and ends <see cref="JobStatus.Failed"/> with <see cref="CancelledError"/> (or Completed when its work
+    /// finished first). Returns the running job's state with the request, or null when no job is running.
+    /// </summary>
+    public JobState? RequestCancel()
+    {
+        for (var attempt = 0; attempt < CancelAttempts; attempt++)
+        {
+            var raw = _keyValues.GetValue(Constants.JobStateKey);
+            var current = Deserialize(raw);
+            if (raw is null || current is not { Status: JobStatus.Running } || IsStale(current, Now())) return null;
+            if (current.CancelRequested) return current;
+
+            var requested = current with { CancelRequested = true };
+            if (_keyValues.TrySetValue(Constants.JobStateKey, raw, Serialize(requested))) return requested;
+        }
+
+        throw new InvalidOperationException("Could not store the cancel request of map to redirect job; the job state kept changing.");
+    }
+
     private static bool IsStale(JobState state, DateTime nowUtc) =>
         state.Status == JobStatus.Running && nowUtc - state.HeartbeatUtc > StaleAfter;
 
@@ -122,7 +150,9 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
 
     /// <summary>
     /// One running job. Every write is compare-and-set against the value this job wrote last: when another server took
-    /// over (this job's heartbeat went stale), the job stops writing and is cancelled.
+    /// over (this job's heartbeat went stale), the job stops writing and is cancelled. A cancel request
+    /// (<see cref="RequestCancel"/>) also makes the compare-and-set fail: the write then adopts the stored request,
+    /// cancels the token and writes again.
     /// </summary>
     private sealed class Run(JobRunner runner, JobState started, string startedRaw)
     {
@@ -132,6 +162,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
         private JobState _state = started;
         private string _raw = startedRaw;
         private bool _closed;
+        private volatile bool _cancelRequested;
 
         // The last write that threw: it may have committed anyway.
         private (JobState State, string Json)? _unconfirmed;
@@ -165,6 +196,11 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
                 catch (JobFailedException ex)
                 {
                     final = Ended(JobStatus.Failed, s => s with { Error = ex.Error, Summary = ex.Summary });
+                }
+                catch (OperationCanceledException) when (_cancelRequested)
+                {
+                    runner._logger.LogInformation("Map to redirect {Kind} job {JobId} was cancelled", _started.Kind, _started.Id);
+                    final = Ended(JobStatus.Failed, s => s with { Error = CancelledError });
                 }
                 catch (Exception ex)
                 {
@@ -215,6 +251,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
         private WriteResult Write(Func<JobState, JobState> change, bool close)
         {
             WriteResult result;
+            var cancelSeen = false;
             lock (_gate)
             {
                 if (_closed)
@@ -231,6 +268,15 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
                 {
                     _state = unconfirmed.State;
                     _raw = unconfirmed.Json;
+                    next = change(_state);
+                    json = Serialize(next);
+                    result = TrySet(json);
+                }
+
+                // A cancel request for this job changed the stored value: take it over and write again.
+                if (result == WriteResult.Lost && AdoptCancelRequest())
+                {
+                    cancelSeen = true;
                     next = change(_state);
                     json = Serialize(next);
                     result = TrySet(json);
@@ -254,7 +300,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
                 }
             }
 
-            if (result == WriteResult.Lost)
+            if (result == WriteResult.Lost || cancelSeen)
             {
                 try
                 {
@@ -268,6 +314,19 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
             }
 
             return result;
+        }
+
+        // True when the stored value is this job, still running, with a cancel request; it becomes the value to compare against.
+        private bool AdoptCancelRequest()
+        {
+            var raw = SafeRead();
+            if (Deserialize(raw) is not { Status: JobStatus.Running, CancelRequested: true } stored || stored.Id != _started.Id) return false;
+
+            _state = stored;
+            _raw = raw!;
+            _unconfirmed = null;
+            _cancelRequested = true;
+            return true;
         }
 
         private WriteResult TrySet(string json)

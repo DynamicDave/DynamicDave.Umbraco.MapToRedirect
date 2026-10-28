@@ -330,4 +330,78 @@ public class JobRunnerTests
         Assert.Equal([(1, 10, JobPhases.FetchingTitles), (2, 10, JobPhases.FetchingTitles)], saves);
         Assert.True(JobRunner.HeartbeatInterval <= TimeSpan.FromSeconds(30));
     }
+
+    [Fact]
+    public async Task Cancel_request_stops_the_running_job_as_failed_cancelled()
+    {
+        var running = new TaskCompletionSource();
+        var cancelRequested = new TaskCompletionSource();
+        var started = _runner.TryStart(JobKind.Apply, UserKey, "Dave", async (_, progress, ct) =>
+        {
+            progress.Report(1, 10, JobPhases.Applying);
+            running.SetResult();
+            await cancelRequested.Task;
+
+            // The next progress write sees the request and cancels the token.
+            _time.Advance(TimeSpan.FromSeconds(1));
+            progress.Report(2, 10, JobPhases.Applying);
+            await Task.Delay(Timeout.Infinite, ct);
+            return (null, null, null);
+        })!;
+        await running.Task;
+
+        var requested = _runner.RequestCancel();
+        cancelRequested.SetResult();
+        await _runner.LastRun!.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.NotNull(requested);
+        Assert.Equal((started.Id, JobStatus.Running, true), (requested.Id, requested.Status, requested.CancelRequested));
+        var state = _runner.Current()!;
+        Assert.Equal((started.Id, JobStatus.Failed, JobRunner.CancelledError), (state.Id, state.Status, state.Error));
+        Assert.Equal((2, 10), (state.Done, state.Total));
+        Assert.DoesNotContain(_log.Entries, e => e.Level >= LogLevel.Error || e.Message.Contains("taken over"));
+    }
+
+    [Fact]
+    public async Task Cancel_request_is_seen_by_the_final_write_of_a_job_that_ignores_its_token()
+    {
+        var running = new TaskCompletionSource();
+        var cancelRequested = new TaskCompletionSource();
+        _runner.TryStart(JobKind.Undo, UserKey, "Dave", async (_, _, _) =>
+        {
+            running.SetResult();
+            await cancelRequested.Task;
+            return (null, null, "{}");
+        });
+        await running.Task;
+
+        Assert.NotNull(_runner.RequestCancel());
+        cancelRequested.SetResult();
+        await _runner.LastRun!;
+
+        // The work finished anyway: its result stands, and the job is not taken over.
+        var state = _runner.Current()!;
+        Assert.Equal((JobStatus.Completed, "{}"), (state.Status, state.Summary));
+        Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("taken over"));
+    }
+
+    [Fact]
+    public async Task Cancel_request_without_a_running_job_finds_nothing()
+    {
+        Assert.Null(_runner.RequestCancel());
+
+        await RunToEnd(JobKind.Generate, Returning());
+        Assert.Null(_runner.RequestCancel());
+        Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
+    }
+
+    [Fact]
+    public void Cancel_request_for_a_stale_job_finds_nothing()
+    {
+        _runner.TryStart(JobKind.Generate, UserKey, "Dave", (_, _, _) => new TaskCompletionSource<(Guid?, TempKind?, string?)>().Task);
+        _time.Advance(TimeSpan.FromMinutes(3));
+
+        Assert.Null(_runner.RequestCancel());
+        Assert.Equal(JobStatus.Aborted, _runner.Current()!.Status);
+    }
 }

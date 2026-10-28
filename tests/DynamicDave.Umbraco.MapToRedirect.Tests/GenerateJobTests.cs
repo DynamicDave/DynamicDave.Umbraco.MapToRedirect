@@ -55,6 +55,23 @@ public class GenerateJobTests
         return content[1..].Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split(',')).ToArray();
     }
 
+    // A cancel request that arrives as the CSV is about to be written still stops the job before anything is stored.
+    [Fact]
+    public async Task Cancelled_generate_writes_no_csv()
+    {
+        _http.Text(SitemapUrl, UrlSet("/contact", "/nothing-here"));
+        using var cancel = new CancellationTokenSource();
+        var progress = new JobProgress(new FixedTimeProvider(Now), (_, _, phase) =>
+        {
+            if (phase == JobPhases.WritingCsv) cancel.Cancel();
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Job().RunAsync(SitemapUrl, MatchMethod.Url, Site.RootKey, Culture, progress, cancel.Token));
+
+        Assert.Empty(_stored);
+    }
+
     [Fact]
     public async Task GenerateJob_writes_sorted_csv_with_match_columns()
     {

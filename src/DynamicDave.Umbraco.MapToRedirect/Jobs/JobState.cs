@@ -51,7 +51,8 @@ public record JobState(
     Guid? ResultKey,
     TempKind? ResultKind,
     string? Error,
-    string? Summary);
+    string? Summary,
+    bool CancelRequested = false);
 
 /// <summary>
 /// Ends a job as <see cref="JobStatus.Failed"/> with a stable error code (e.g. a <c>SitemapError</c> name) and, optionally,
