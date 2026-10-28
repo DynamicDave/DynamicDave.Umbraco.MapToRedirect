@@ -19,6 +19,15 @@ public class MapToRedirectOptionsTests
 
         Assert.Equal(["admin"], options.AllowedUserGroups);
         Assert.Null(options.AllowPrivateNetworkTargets);
+        Assert.True(options.RedirectFileExtensionUrls);
+    }
+
+    [Fact]
+    public void File_extension_redirects_can_be_switched_off()
+    {
+        var options = Bind(new() { ["DynamicDave:MapToRedirect:RedirectFileExtensionUrls"] = "false" });
+
+        Assert.False(options.RedirectFileExtensionUrls);
     }
 
     [Fact]

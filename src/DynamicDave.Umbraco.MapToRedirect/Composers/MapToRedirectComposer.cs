@@ -8,6 +8,7 @@ using DynamicDave.Umbraco.MapToRedirect.Redirects;
 using DynamicDave.Umbraco.MapToRedirect.Security;
 using DynamicDave.Umbraco.MapToRedirect.Sitemaps;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
+using Umbraco.Cms.Web.Common.ApplicationBuilder;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Composers;
 
@@ -41,6 +43,14 @@ public class MapToRedirectComposer : IComposer
 
         // One job at a time per installation; each job runs in its own DI scope (see JobRunner).
         builder.Services.AddSingleton<JobRunner>();
+
+        // Umbraco does not route paths with a file extension ("/about/team.html"), so their redirects are served by a
+        // middleware that wraps the whole pipeline and only acts on the 404 those requests end with. Switched off by
+        // RedirectFileExtensionUrls; UmbracoPipelineFilter(name) and PrePipeline are the same on Umbraco 17 and 18.
+        builder.Services.Configure<UmbracoPipelineOptions>(options => options.AddFilter(new UmbracoPipelineFilter(Constants.PackageName)
+        {
+            PrePipeline = app => app.UseMiddleware<ExtensionRedirectMiddleware>(),
+        }));
 
         // Redirects are followed manually (SafeHttp) so every target can be checked. Private network targets are
         // blocked unless configured, or the site runs in the Development environment. Decompression is automatic for

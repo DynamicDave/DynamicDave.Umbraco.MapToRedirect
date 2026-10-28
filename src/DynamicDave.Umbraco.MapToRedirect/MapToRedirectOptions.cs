@@ -15,6 +15,12 @@ public class MapToRedirectOptions
     public bool? AllowPrivateNetworkTargets { get; set; }
 
     /// <summary>
+    /// True (default): redirects for old URLs with a file extension ("/about/team.html"), which Umbraco does not route
+    /// itself, are served by the package's middleware.
+    /// </summary>
+    public bool RedirectFileExtensionUrls { get; set; } = true;
+
+    /// <summary>
     /// Binds the section onto <paramref name="options"/>. The configuration binder appends configured array items to
     /// the default array, which would make "admin" impossible to remove, so a configured list replaces the default.
     /// </summary>

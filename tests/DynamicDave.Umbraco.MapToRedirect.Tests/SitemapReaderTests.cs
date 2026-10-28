@@ -124,6 +124,17 @@ public class SitemapReaderTests
         Assert.Equal(["https://old.example/a", "https://old.example/b"], result.Urls);
     }
 
+    // Both are real old URLs: each needs its own redirect, so each gets a row.
+    [Fact]
+    public async Task Paths_that_differ_by_extension_are_kept()
+    {
+        var handler = new FakeHttpHandler().Text("https://old.example/sitemap.xml", UrlSet("https://old.example/a.html", "https://old.example/a", "https://old.example/A.HTML"));
+
+        var result = await Reader(handler).ReadAsync("https://old.example/sitemap.xml", null, default);
+
+        Assert.Equal(["https://old.example/a.html", "https://old.example/a"], result.Urls);
+    }
+
     [Fact]
     public async Task Stops_at_url_limit()
     {

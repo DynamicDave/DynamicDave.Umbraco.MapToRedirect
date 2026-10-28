@@ -336,10 +336,13 @@ public class SitemapReader
 
         public int FilesRead { get; set; }
 
-        /// <summary>Adds a URL unless its normalized path is known. Returns false once the URL limit is hit.</summary>
+        /// <summary>
+        /// Adds a URL unless its request path (<see cref="UrlNormalizer.RoutePath"/>) is known: "/a.html" and "/a" are
+        /// both real old URLs and both need a redirect. Returns false once the URL limit is hit.
+        /// </summary>
         public bool Add(string url, int maxUrls)
         {
-            var path = UrlNormalizer.Normalize(url);
+            var path = UrlNormalizer.RoutePath(url);
             if (path is null || !_seen.Add(path))
             {
                 return true;
