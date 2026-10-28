@@ -1,6 +1,6 @@
 export default {
   ddMapToRedirect: {
-    title: 'Importér omdirigeringer',
+    title: 'Map to Redirect',
     dismiss: 'Luk',
     site: 'Website',
     language: 'Sprog',

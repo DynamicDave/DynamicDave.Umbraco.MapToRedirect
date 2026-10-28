@@ -1,6 +1,6 @@
 export default {
   ddMapToRedirect: {
-    title: 'Weiterleitungen importieren',
+    title: 'Map to Redirect',
     dismiss: 'Schließen',
     site: 'Website',
     language: 'Sprache',

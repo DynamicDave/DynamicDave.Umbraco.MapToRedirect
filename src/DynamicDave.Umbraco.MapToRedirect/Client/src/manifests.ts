@@ -2,13 +2,13 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'condition',
     alias: 'DynamicDave.MapToRedirect.Condition.Access',
-    name: 'Map To Redirect Access Condition',
+    name: 'Map to Redirect Access Condition',
     api: () => import('./access.condition.js'),
   },
   {
     type: 'dashboard',
     alias: 'DynamicDave.MapToRedirect.Dashboard',
-    name: 'Import Redirects Dashboard',
+    name: 'Map to Redirect Dashboard',
     element: () => import('./map-to-redirect-dashboard.element.js'),
     weight: -12,
     meta: { label: '#ddMapToRedirect_title', pathname: 'import-redirects' },
@@ -20,7 +20,7 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.En',
-    name: 'Map To Redirect English',
+    name: 'Map to Redirect English',
     weight: -100,
     meta: { culture: 'en' },
     js: () => import('./localization/en.js'),
@@ -28,7 +28,7 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.Nl',
-    name: 'Map To Redirect Dutch',
+    name: 'Map to Redirect Dutch',
     weight: -100,
     meta: { culture: 'nl' },
     js: () => import('./localization/nl.js'),
@@ -36,7 +36,7 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.De',
-    name: 'Map To Redirect German',
+    name: 'Map to Redirect German',
     weight: -100,
     meta: { culture: 'de' },
     js: () => import('./localization/de.js'),
@@ -44,7 +44,7 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.Fr',
-    name: 'Map To Redirect French',
+    name: 'Map to Redirect French',
     weight: -100,
     meta: { culture: 'fr' },
     js: () => import('./localization/fr.js'),
@@ -52,7 +52,7 @@ export const manifests: Array<UmbExtensionManifest> = [
   {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.Da',
-    name: 'Map To Redirect Danish',
+    name: 'Map to Redirect Danish',
     weight: -100,
     meta: { culture: 'da' },
     js: () => import('./localization/da.js'),

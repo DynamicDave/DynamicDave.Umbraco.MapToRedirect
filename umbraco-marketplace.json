@@ -1,6 +1,6 @@
 {
   "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
-  "Title": "Map To Redirect",
+  "Title": "Map to Redirect",
   "Category": "Editor Tools",
   "PackageType": "Package",
   "LicenseTypes": [

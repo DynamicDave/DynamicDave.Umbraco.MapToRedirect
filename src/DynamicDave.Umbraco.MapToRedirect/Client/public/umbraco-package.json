@@ -9,7 +9,7 @@
   },
   "extensions": [
     {
-      "name": "Map To Redirect",
+      "name": "Map to Redirect",
       "alias": "DynamicDave.Umbraco.MapToRedirect.Bundle",
       "type": "bundle",
       "js": "/App_Plugins/DynamicDaveUmbracoMapToRedirect/dynamic-dave-umbraco-map-to-redirect.js"

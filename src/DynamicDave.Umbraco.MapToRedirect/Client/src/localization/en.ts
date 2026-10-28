@@ -1,6 +1,6 @@
 export default {
   ddMapToRedirect: {
-    title: 'Import redirects',
+    title: 'Map to Redirect',
     dismiss: 'Dismiss',
     site: 'Site',
     language: 'Language',

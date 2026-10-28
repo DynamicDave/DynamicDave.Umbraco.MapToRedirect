@@ -29,7 +29,7 @@ public class MapToRedirectOpenApiComposer : IComposer
             // https://docs.umbraco.com/umbraco-cms/tutorials/creating-a-backoffice-api/adding-a-custom-swagger-document
             opt.SwaggerDoc(Constants.ApiName, new OpenApiInfo
             {
-                Title = "Dynamic Dave Umbraco Map To Redirect Backoffice API",
+                Title = "Dynamic Dave Umbraco Map to Redirect Backoffice API",
                 Version = "1.0",
             });
 

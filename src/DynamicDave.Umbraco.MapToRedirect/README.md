@@ -2,7 +2,7 @@
 
 Turns a CSV of old and new URLs into redirects in Umbraco's own redirect list (Content > Redirect URL Management), so visitors and search engines on the URLs of an old website get a 301 to the new page. Made for moving an old site to Umbraco.
 
-- **Import redirects dashboard** in the Content section: upload a CSV with the columns Old URL and New URL, see a test run of every row, then apply it.
+- **Map to Redirect dashboard** in the Content section: upload a CSV with the columns Old URL and New URL, see a test run of every row, then apply it.
 - **Generate** (optional): reads the old site's sitemap and proposes the CSV, matching every old URL to a page of the current site.
 - **History**: every import is kept with its results and can be undone in one action.
 - Old URLs with a file extension (`/about/team.html`, `/page.php`, `/default.aspx`) redirect too, which Umbraco does not do by itself.

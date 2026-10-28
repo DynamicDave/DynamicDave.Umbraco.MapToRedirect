@@ -1,6 +1,6 @@
 # DynamicDave.Umbraco.MapToRedirect
 
-Turns a CSV of old and new URLs into redirects in Umbraco's own redirect list, for moving an old website to Umbraco: an Import redirects dashboard in the Content section with a test run before anything changes, an optional CSV generator that matches the old site's sitemap to the pages of the new site, and a history with undo.
+Turns a CSV of old and new URLs into redirects in Umbraco's own redirect list, for moving an old website to Umbraco: a Map to Redirect dashboard in the Content section with a test run before anything changes, an optional CSV generator that matches the old site's sitemap to the pages of the new site, and a history with undo.
 
 The backoffice UI is localized in English, Dutch, German, French and Danish (`src/DynamicDave.Umbraco.MapToRedirect/Client/src/localization`).
 

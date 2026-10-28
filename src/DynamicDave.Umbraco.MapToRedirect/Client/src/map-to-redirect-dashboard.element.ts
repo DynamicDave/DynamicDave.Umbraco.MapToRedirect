@@ -21,7 +21,7 @@ const TABS: Array<{ tab: Tab; term: string }> = [
 ];
 
 /**
- * The "Import redirects" dashboard (spec §4.2): site and language pickers, and the generate, upload and history tabs.
+ * The "Map to Redirect" dashboard (spec §4.2): site and language pickers, and the generate, upload and history tabs.
  * Owns the one job of the installation: it polls it every 2 s while it runs and hands it to the tabs.
  */
 @customElement('dd-map-to-redirect-dashboard')
