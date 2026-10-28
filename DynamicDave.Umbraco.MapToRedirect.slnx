@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DynamicDave.Umbraco.MapToRedirect/DynamicDave.Umbraco.MapToRedirect.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DynamicDave.Umbraco.MapToRedirect.Tests/DynamicDave.Umbraco.MapToRedirect.Tests.csproj" />
+    <Project Path="tests/TestSite/TestSite.csproj" />
+  </Folder>
+</Solution>

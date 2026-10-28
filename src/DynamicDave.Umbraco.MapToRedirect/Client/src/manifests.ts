@@ -1,0 +1,42 @@
+export const manifests: Array<UmbExtensionManifest> = [
+  {
+    type: 'localization',
+    alias: 'DynamicDave.MapToRedirect.Localization.En',
+    name: 'Map To Redirect English',
+    weight: -100,
+    meta: { culture: 'en' },
+    js: () => import('./localization/en.js'),
+  },
+  {
+    type: 'localization',
+    alias: 'DynamicDave.MapToRedirect.Localization.Nl',
+    name: 'Map To Redirect Dutch',
+    weight: -100,
+    meta: { culture: 'nl' },
+    js: () => import('./localization/nl.js'),
+  },
+  {
+    type: 'localization',
+    alias: 'DynamicDave.MapToRedirect.Localization.De',
+    name: 'Map To Redirect German',
+    weight: -100,
+    meta: { culture: 'de' },
+    js: () => import('./localization/de.js'),
+  },
+  {
+    type: 'localization',
+    alias: 'DynamicDave.MapToRedirect.Localization.Fr',
+    name: 'Map To Redirect French',
+    weight: -100,
+    meta: { culture: 'fr' },
+    js: () => import('./localization/fr.js'),
+  },
+  {
+    type: 'localization',
+    alias: 'DynamicDave.MapToRedirect.Localization.Da',
+    name: 'Map To Redirect Danish',
+    weight: -100,
+    meta: { culture: 'da' },
+    js: () => import('./localization/da.js'),
+  },
+];

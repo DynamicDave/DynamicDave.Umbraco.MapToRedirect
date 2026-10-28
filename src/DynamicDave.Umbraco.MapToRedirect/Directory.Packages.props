@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Allow floating versions so extensions can align with the host Umbraco project's package versions -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+    <!-- Supported Umbraco versions. The package is built against the lowest version in the range; the site that
+         installs it resolves the actual version. CI also builds it against the newest 18.x. Override to compile
+         against another version, e.g. dotnet build -p:UmbracoVersion=18.2.1 -->
+    <UmbracoVersion Condition="'$(UmbracoVersion)' == ''">[17.0.0, 19.0.0)</UmbracoVersion>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <!-- Umbraco API packages - Used by extension templates -->
+    <PackageVersion Include="Umbraco.Cms.Api.Common" Version="$(UmbracoVersion)" />
+    <PackageVersion Include="Umbraco.Cms.Api.Management" Version="$(UmbracoVersion)" />
+    <PackageVersion Include="Umbraco.Cms.Web.Common" Version="$(UmbracoVersion)" />
+  </ItemGroup>
+</Project>

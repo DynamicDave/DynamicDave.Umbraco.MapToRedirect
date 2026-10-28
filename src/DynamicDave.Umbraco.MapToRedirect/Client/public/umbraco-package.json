@@ -1,0 +1,18 @@
+{
+  "id": "DynamicDave.Umbraco.MapToRedirect",
+  "name": "DynamicDave.Umbraco.MapToRedirect",
+  "version": "18.0.0",
+  "allowTelemetry": true,
+  "AuthorDetails": {
+    "Name": "Dynamic Dave",
+    "Url": "https://www.dynamicdave.nl/"
+  },
+  "extensions": [
+    {
+      "name": "Map To Redirect",
+      "alias": "DynamicDave.Umbraco.MapToRedirect.Bundle",
+      "type": "bundle",
+      "js": "/App_Plugins/DynamicDaveUmbracoMapToRedirect/dynamic-dave-umbraco-map-to-redirect.js"
+    }
+  ]
+}

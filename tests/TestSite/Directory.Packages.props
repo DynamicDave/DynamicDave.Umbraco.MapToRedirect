@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!--
+      Default must match UmbracoAppLocalIcuVersion in TestSite.csproj. Defined here too because this file
+      is imported before the main project's own PropertyGroup runs, so under CPM the PackageVersion below needs
+      its own fallback to stay in sync with the RuntimeHostConfigurationOption value set from the same property.
+    -->
+    <UmbracoAppLocalIcuVersion Condition="'$(UmbracoAppLocalIcuVersion)' == ''">72.1.0.3</UmbracoAppLocalIcuVersion>
+    <!--
+      Umbraco version the TestSite runs on. The package itself is still built against its own minimum version, like
+      on a real site. Run on another version with e.g. dotnet run -p:TestSiteUmbracoVersion=18.2.1
+    -->
+    <TestSiteUmbracoVersion Condition="'$(TestSiteUmbracoVersion)' == ''">17.7.1</TestSiteUmbracoVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Umbraco.Cms" Version="$(TestSiteUmbracoVersion)" />
+    <PackageVersion Include="Umbraco.Cms.DevelopmentMode.Backoffice" Version="$(TestSiteUmbracoVersion)" />
+    <PackageVersion Include="Microsoft.ICU.ICU4C.Runtime" Version="$(UmbracoAppLocalIcuVersion)" />
+    <!--
+      Patched versions of Umbraco's own transitive dependencies, pinned (CentralPackageTransitivePinningEnabled) so
+      the CI vulnerability check passes. Remove an entry as soon as Umbraco references the patched version itself.
+        MessagePack 3.1.8 via Umbraco.Cms.Web.Common: GHSA-qhrr-8q5h-9q3h (medium)
+        System.Security.Cryptography.Pkcs 10.0.0 via MailKit/MimeKit: GHSA-2fmv-rv2c-59x7 (medium), GHSA-846f-f764-76mx (high)
+    -->
+    <PackageVersion Include="MessagePack" Version="3.1.12" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
+  "Title": "DynamicDave.Umbraco.MapToRedirect",
+  "Description": "Turns a CSV of old and new URLs into Umbraco redirects."
+}

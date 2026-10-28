@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Authors>DynamicDave</Authors>
+    <Company>DynamicDave</Company>
+    <Copyright>Copyright (c) DynamicDave</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>18.0.0</Version>
+  </PropertyGroup>
+</Project>

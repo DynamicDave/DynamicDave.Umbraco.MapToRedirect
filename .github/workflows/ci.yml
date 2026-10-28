@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE: DynamicDave.Umbraco.MapToRedirect
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/${{ env.PACKAGE }}/Client/package-lock.json
+
+      # Built as a separate step (not by the MSBuild BuildClient target), so the static web assets
+      # are on disk before MSBuild collects them.
+      - name: Build client
+        working-directory: src/${{ env.PACKAGE }}/Client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Test
+        run: dotnet test tests/${{ env.PACKAGE }}.Tests -c Release -p:SkipClientBuild=true
+
+      - name: Pack
+        run: dotnet pack src/${{ env.PACKAGE }} -c Release -p:SkipClientBuild=true -p:ContinuousIntegrationBuild=true -o artifacts
+
+      # The package is built against its minimum Umbraco version, whose own dependencies may have advisories that
+      # sites on a newer version never get. The TestSite installs the package on a current Umbraco, like a real site;
+      # restoring it with FailOnVulnerablePackages fails on any known advisory except those accepted in
+      # tests/TestSite/TestSite.csproj (NuGetAuditSuppress, for Umbraco's own dependencies).
+      - name: Check NuGet dependencies for known vulnerabilities
+        run: dotnet restore tests/TestSite --force -p:FailOnVulnerablePackages=true
+
+      - name: Check runtime npm dependencies for known vulnerabilities
+        working-directory: src/${{ env.PACKAGE }}/Client
+        run: npm audit --omit=dev --audit-level=high
+
+      # The package supports Umbraco 17 and 18 and is built against 17.0.0. Also compile it against the newest
+      # Umbraco 18, and install it in the TestSite on Umbraco 18 like a real site, failing on known advisories there
+      # too. Runs after the vulnerability check above, which reads the TestSite's Umbraco 17 restore.
+      - name: Build against Umbraco 18
+        run: |
+          dotnet build src/${{ env.PACKAGE }} -c Release -p:SkipClientBuild=true "-p:UmbracoVersion=18.*"
+          dotnet build tests/TestSite -c Release -p:SkipClientBuild=true "-p:TestSiteUmbracoVersion=18.*" -p:FailOnVulnerablePackages=true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/*.nupkg

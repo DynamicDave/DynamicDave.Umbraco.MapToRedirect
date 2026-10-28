@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>DynamicDave.Umbraco.MapToRedirect</PackageId>
+    <Description>Turns a CSV of old and new URLs into Umbraco redirects. Can also generate the CSV from the old site's sitemap, shows a test run before anything changes, and lets you undo an import.</Description>
+    <PackageTags>umbraco-marketplace;umbraco;backoffice;redirects;migration;seo;csv</PackageTags>
+    <Product>DynamicDave.Umbraco.MapToRedirect</Product>
+    <Title>DynamicDave.Umbraco.MapToRedirect</Title>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>DynamicDave.package.logo.png</PackageIcon>
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="DynamicDave.package.logo.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DynamicDave.Umbraco.MapToRedirect.Tests" />
+  </ItemGroup>
+
+  <!-- Central package management - no versions -->
+  <ItemGroup>
+    <PackageReference Include="Umbraco.Cms.Api.Common" />
+    <PackageReference Include="Umbraco.Cms.Api.Management" />
+    <PackageReference Include="Umbraco.Cms.Web.Common" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Don't include the client folder as part of packaging nuget build -->
+    <Content Remove="Client\**" />
+
+    <!-- However make the Umbraco-package.json included for dotnet pack or nuget package and visible to the solution -->
+    <None Include="Client\public\umbraco-package.json" Pack="false" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <!-- Client build (Vite/Lit). Runs before build so a fresh clone gets the UI.
+       Skip with -p:SkipClientBuild=true. Needs Node 22+ and npm on PATH. -->
+  <PropertyGroup>
+    <ClientDir>$(MSBuildProjectDirectory)\Client</ClientDir>
+    <ClientBundle>$(MSBuildProjectDirectory)\wwwroot\App_Plugins\DynamicDaveUmbracoMapToRedirect\dynamic-dave-umbraco-map-to-redirect.js</ClientBundle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ClientInput Include="Client\src\**;Client\public\**;Client\package.json;Client\package-lock.json;Client\vite.config.ts;Client\tsconfig.json" />
+  </ItemGroup>
+
+  <Target Name="BuildClient" BeforeTargets="BeforeBuild" Condition="'$(SkipClientBuild)' != 'true'" Inputs="@(ClientInput)" Outputs="$(ClientBundle)">
+    <Exec Command="npm --version" ContinueOnError="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_NpmExitCode" />
+    </Exec>
+    <Error Condition="'$(_NpmExitCode)' != '0'" Text="npm was not found on PATH. Install Node.js 22+ (https://nodejs.org) to build the MapToRedirect client, or pass -p:SkipClientBuild=true." />
+    <Exec Condition="!Exists('$(ClientDir)\node_modules')" Command="npm ci" WorkingDirectory="$(ClientDir)" />
+    <Exec Command="npm run build" WorkingDirectory="$(ClientDir)" />
+  </Target>
+
+  <Target Name="EnsureClientBundle" BeforeTargets="Pack;GenerateNuspec">
+    <Error Condition="!Exists('$(ClientBundle)')" Text="Client bundle missing ($(ClientBundle)). Build the client first (do not pass -p:SkipClientBuild=true to pack on a clean checkout)." />
+  </Target>
+
+</Project>

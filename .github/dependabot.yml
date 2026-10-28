@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Test projects and the TestSite. The package itself (src) is left out on purpose: its Umbraco version range
+  # is the supported range, not something to bump automatically. The tests reach that range through central
+  # package management, so the package's Umbraco references are ignored here as well. Security alerts still cover it.
+  - package-ecosystem: nuget
+    directories: ["/tests/*"]
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "Umbraco.*"
+        update-types: ["version-update:semver-major"]
+      # Package references (src/*/Directory.Packages.props): keep the supported range as is
+      - dependency-name: "Umbraco.Cms.Api.Common"
+      - dependency-name: "Umbraco.Cms.Api.Management"
+      - dependency-name: "Umbraco.Cms.Web.Common"
+    groups:
+      nuget:
+        update-types: [minor, patch]
+
+  # Client build tooling. @umbraco-cms/backoffice stays on the Umbraco major the package targets.
+  - package-ecosystem: npm
+    directory: /src/DynamicDave.Umbraco.MapToRedirect/Client
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "@umbraco-cms/backoffice"
+        update-types: ["version-update:semver-major"]
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

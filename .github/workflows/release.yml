@@ -1,0 +1,85 @@
+name: Release
+
+# Publishes to nuget.org when a version tag is pushed, e.g. `git tag v18.0.2 && git push origin v18.0.2`.
+# Authentication uses NuGet trusted publishing (OIDC): no API key is stored in this repository.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # request the OIDC token for NuGet trusted publishing
+
+env:
+  PACKAGE: DynamicDave.Umbraco.MapToRedirect
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check that the tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME does not point at a commit on main."
+            exit 1
+          fi
+
+      - name: Check that the tag matches the package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          props=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+          manifest=$(node -p "require('./src/$PACKAGE/Client/public/umbraco-package.json').version")
+          client=$(node -p "require('./src/$PACKAGE/Client/package.json').version")
+          echo "tag: $tag | Directory.Build.props: $props | umbraco-package.json: $manifest | package.json: $client"
+          if [ "$tag" != "$props" ] || [ "$tag" != "$manifest" ] || [ "$tag" != "$client" ]; then
+            echo "::error::Version mismatch. Set $tag in Directory.Build.props, umbraco-package.json and Client/package.json."
+            exit 1
+          fi
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/${{ env.PACKAGE }}/Client/package-lock.json
+
+      - name: Build client
+        working-directory: src/${{ env.PACKAGE }}/Client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Test
+        run: dotnet test tests/${{ env.PACKAGE }}.Tests -c Release -p:SkipClientBuild=true
+
+      - name: Pack
+        run: dotnet pack src/${{ env.PACKAGE }} -c Release -p:SkipClientBuild=true -p:ContinuousIntegrationBuild=true -o artifacts
+
+      # Exchanges the GitHub OIDC token for a short-lived (1 hour) nuget.org API key.
+      # NUGET_USER is a repository variable holding the nuget.org profile name (not the e-mail address).
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to nuget.org
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --title "$GITHUB_REF_NAME" --generate-notes $prerelease
