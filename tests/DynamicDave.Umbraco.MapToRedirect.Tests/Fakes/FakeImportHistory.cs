@@ -4,23 +4,29 @@ using DynamicDave.Umbraco.MapToRedirect.Persistence;
 namespace DynamicDave.Umbraco.MapToRedirect.Tests.Fakes;
 
 /// <summary>
-/// In-memory import history. <see cref="Ambient"/>, when set, is read on every AddRow and stored in
-/// <see cref="RowScopes"/>, so tests can check which scope a row was written in.
+/// In-memory import history that takes part in <see cref="FakeScopeProvider"/> scopes. <see cref="Ambient"/>, when
+/// set, is read on every AddRow and stored in <see cref="RowScopes"/>. <see cref="CreatedStates"/> keeps the state
+/// each import was created with; <see cref="FailOnComplete"/> makes Complete throw.
 /// </summary>
-internal sealed class FakeImportHistory : IImportHistory
+internal sealed class FakeImportHistory : IImportHistory, IFakeTransactional
 {
-    private readonly List<(int Id, ImportRecord Record, List<ImportRowRecord> Rows)> _imports = [];
+    private List<Import> _imports = [];
 
     public Func<object?>? Ambient { get; set; }
 
     public List<object?> RowScopes { get; } = [];
 
+    public List<ImportState> CreatedStates { get; } = [];
+
     public int MarkUndoneCalls { get; private set; }
+
+    public Exception? FailOnComplete { get; set; }
 
     public int Create(ImportRecord record)
     {
         var id = _imports.Count + 1;
-        _imports.Add((id, record, []));
+        CreatedStates.Add(record.State);
+        _imports.Add(new Import(id, record, []));
         return id;
     }
 
@@ -32,9 +38,9 @@ internal sealed class FakeImportHistory : IImportHistory
 
     public void Complete(int importId, ImportCounts counts, ImportState state)
     {
-        var index = _imports.FindIndex(i => i.Id == importId);
-        var import = _imports[index];
-        _imports[index] = import with { Record = import.Record with { Counts = counts, State = state } };
+        if (FailOnComplete is not null) throw FailOnComplete;
+        var import = ById(importId);
+        import.Record = import.Record with { Counts = counts, State = state };
     }
 
     public (IReadOnlyList<ImportRecord> Items, int Total) List(int skip, int take) =>
@@ -51,16 +57,34 @@ internal sealed class FakeImportHistory : IImportHistory
     public IReadOnlyList<ImportRowRecord> AllRows(Guid key) =>
         ByKey(key)?.Rows.OrderBy(r => r.RowNumber).ToList() ?? [];
 
+    public void MarkRowUndone(Guid key, int rowNumber)
+    {
+        var rows = ByKey(key)!.Rows;
+        var index = rows.FindIndex(r => r.RowNumber == rowNumber);
+        rows[index] = rows[index] with { Undone = true };
+    }
+
     public void MarkUndone(Guid key, string userName, DateTime utc)
     {
         MarkUndoneCalls++;
-        var index = _imports.FindIndex(i => i.Record.Key == key);
-        var import = _imports[index];
-        _imports[index] = import with { Record = import.Record with { State = ImportState.Undone, UndoneUtc = utc, UndoneBy = userName } };
+        var import = ByKey(key)!;
+        import.Record = import.Record with { State = ImportState.Undone, UndoneUtc = utc, UndoneBy = userName };
     }
 
-    private (int Id, ImportRecord Record, List<ImportRowRecord> Rows) ById(int id) => _imports.Single(i => i.Id == id);
+    public object Snapshot() => _imports.Select(i => new Import(i.Id, i.Record, i.Rows.ToList())).ToList();
 
-    private (int Id, ImportRecord Record, List<ImportRowRecord> Rows)? ByKey(Guid key) =>
-        _imports.Where(i => i.Record.Key == key).Select(i => ((int, ImportRecord, List<ImportRowRecord>)?)i).FirstOrDefault();
+    public void Restore(object snapshot) => _imports = (List<Import>)snapshot;
+
+    private Import ById(int id) => _imports.Single(i => i.Id == id);
+
+    private Import? ByKey(Guid key) => _imports.FirstOrDefault(i => i.Record.Key == key);
+
+    private sealed class Import(int id, ImportRecord record, List<ImportRowRecord> rows)
+    {
+        public int Id { get; } = id;
+
+        public ImportRecord Record { get; set; } = record;
+
+        public List<ImportRowRecord> Rows { get; } = rows;
+    }
 }

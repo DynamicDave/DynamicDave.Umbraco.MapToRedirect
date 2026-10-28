@@ -13,7 +13,8 @@ public enum ImportState
     Undone,
 }
 
-public sealed record ImportCounts(int Added, int Replaced, int AlreadyPresent, int Skipped, int Failed);
+/// <summary>Rows per outcome; <see cref="Changed"/> rows changed since the test run and were not executed.</summary>
+public sealed record ImportCounts(int Added, int Replaced, int AlreadyPresent, int Skipped, int Failed, int Changed);
 
 public sealed record ImportRecord(
     Guid Key,
@@ -31,7 +32,8 @@ public sealed record ImportRecord(
 
 /// <summary>
 /// A row of an import. For a Replaced row, <see cref="ReplacedAllCultures"/> is true when the replaced redirect was
-/// culture-less (all languages): it was kept, and the added redirect of the culture overrides it.
+/// culture-less (all languages): it was kept, and the added redirect of the culture overrides it. <see cref="Undone"/>
+/// is set per row by an undo. Row numbers are unique within an import (one row per CSV row).
 /// </summary>
 public sealed record ImportRowRecord(
     int RowNumber,
@@ -44,7 +46,8 @@ public sealed record ImportRowRecord(
     string? OldUrl,
     string? NewUrl,
     string? Message,
-    bool ReplacedAllCultures = false);
+    bool ReplacedAllCultures = false,
+    bool Undone = false);
 
 public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
 {
@@ -87,6 +90,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
             ReplacedPageKey = row.ReplacedPageKey,
             ReplacedCreateDateUtc = row.ReplacedCreateDateUtc,
             ReplacedAllCultures = row.ReplacedAllCultures,
+            Undone = row.Undone,
             OldUrl = row.OldUrl,
             NewUrl = row.NewUrl,
             Message = row.Message,
@@ -105,6 +109,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
                 .Set(x => x.AlreadyPresent, counts.AlreadyPresent)
                 .Set(x => x.Skipped, counts.Skipped)
                 .Set(x => x.Failed, counts.Failed)
+                .Set(x => x.Changed, counts.Changed)
                 .Set(x => x.State, stateValue))
             .Where<ImportDto>(x => x.Id == importId));
         scope.Complete();
@@ -176,6 +181,17 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
             .ToList();
     }
 
+    public void MarkRowUndone(Guid key, int rowNumber)
+    {
+        using var scope = scopeProvider.CreateScope();
+        var import = FindImport(scope, key) ?? throw new InvalidOperationException($"Import {key} does not exist.");
+        var importId = import.Id;
+        scope.Database.Execute(scope.SqlContext.Sql()
+            .Update<ImportRowDto>(u => u.Set(x => x.Undone, true))
+            .Where<ImportRowDto>(x => x.ImportId == importId && x.RowNumber == rowNumber));
+        scope.Complete();
+    }
+
     public void MarkUndone(Guid key, string userName, DateTime utc)
     {
         var undone = (int)ImportState.Undone;
@@ -201,6 +217,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
         dto.AlreadyPresent = counts.AlreadyPresent;
         dto.Skipped = counts.Skipped;
         dto.Failed = counts.Failed;
+        dto.Changed = counts.Changed;
     }
 
     private static ImportRecord ToRecord(ImportDto dto) => new(
@@ -212,7 +229,7 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
         dto.RootKey,
         dto.Culture,
         dto.Overwrite,
-        new ImportCounts(dto.Added, dto.Replaced, dto.AlreadyPresent, dto.Skipped, dto.Failed),
+        new ImportCounts(dto.Added, dto.Replaced, dto.AlreadyPresent, dto.Skipped, dto.Failed, dto.Changed),
         (ImportState)dto.State,
         dto.UndoneUtc is { } undoneUtc ? DateTime.SpecifyKind(undoneUtc, DateTimeKind.Utc) : null,
         dto.UndoneBy);
@@ -228,5 +245,6 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
         dto.OldUrl,
         dto.NewUrl,
         dto.Message,
-        dto.ReplacedAllCultures);
+        dto.ReplacedAllCultures,
+        dto.Undone);
 }

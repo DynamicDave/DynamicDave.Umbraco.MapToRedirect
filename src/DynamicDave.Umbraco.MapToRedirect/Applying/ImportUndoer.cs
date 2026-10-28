@@ -1,5 +1,6 @@
 using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Redirects;
+using Umbraco.Cms.Infrastructure.Scoping;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Applying;
 
@@ -12,8 +13,10 @@ public sealed record UndoResult(int Removed, int Restored, int LeftAlone, IReadO
 /// <summary>
 /// Undoes an import once (spec 4.6). A row is only undone while the redirect in effect for its route and culture is
 /// still the one the import wrote (of exactly that culture, to the same page); anything else is left alone and listed.
+/// Each row is undone in one scope together with its undone flag, so an undo that stops midway can be run again: rows
+/// already undone are counted, not touched. The import is marked Undone only after every row.
 /// </summary>
-public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, TimeProvider timeProvider)
+public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, IScopeProvider scopeProvider, TimeProvider timeProvider)
 {
     /// <param name="onDone">Called after each row with the number of rows done.</param>
     /// <exception cref="InvalidOperationException">The import does not exist or was already undone.</exception>
@@ -28,28 +31,30 @@ public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, T
         var done = 0;
         foreach (var row in history.AllRows(importKey))
         {
-            switch (row.Outcome)
+            // An earlier undo that stopped midway already undid this row.
+            if (row.Undone)
             {
-                case ApplyOutcome.Added when IsStillOurs(row):
-                    store.RemoveExact(row.OldRoute, row.Culture);
-                    removed++;
-                    break;
+                if (row.Outcome == ApplyOutcome.Added) removed++;
+                else restored++;
+            }
+            else
+            {
+                // The redirect changes and the row's undone flag are written together, or not at all.
+                using var scope = scopeProvider.CreateScope();
+                switch (UndoRow(importKey, row))
+                {
+                    case RowResult.Removed:
+                        removed++;
+                        break;
+                    case RowResult.Restored:
+                        restored++;
+                        break;
+                    case RowResult.LeftAlone:
+                        leftAlone.Add(row);
+                        break;
+                }
 
-                // The culture-less redirect was never deleted: removing ours puts it back in effect.
-                case ApplyOutcome.Replaced when row.ReplacedAllCultures && IsStillOurs(row):
-                    store.RemoveExact(row.OldRoute, row.Culture);
-                    restored++;
-                    break;
-
-                case ApplyOutcome.Replaced when !row.ReplacedAllCultures && row.ReplacedPageKey is { } previous && IsStillOurs(row):
-                    store.RemoveExact(row.OldRoute, row.Culture);
-                    store.Add(row.OldRoute, previous, row.Culture);
-                    restored++;
-                    break;
-
-                case ApplyOutcome.Added or ApplyOutcome.Replaced:
-                    leftAlone.Add(row);
-                    break;
+                scope.Complete();
             }
 
             onDone(++done);
@@ -59,8 +64,48 @@ public sealed class ImportUndoer(IRedirectStore store, IImportHistory history, T
         return new UndoResult(removed, restored, leftAlone.Count, leftAlone);
     }
 
+    private RowResult UndoRow(Guid importKey, ImportRowRecord row)
+    {
+        if (row.Outcome is not (ApplyOutcome.Added or ApplyOutcome.Replaced)) return RowResult.Ignored;
+        if (!IsStillOurs(row)) return RowResult.LeftAlone;
+
+        RowResult result;
+        if (row.Outcome == ApplyOutcome.Added)
+        {
+            store.RemoveExact(row.OldRoute, row.Culture);
+            result = RowResult.Removed;
+        }
+        else if (row.ReplacedAllCultures)
+        {
+            // The culture-less redirect was never deleted: removing ours puts it back in effect.
+            store.RemoveExact(row.OldRoute, row.Culture);
+            result = RowResult.Restored;
+        }
+        else if (row.ReplacedPageKey is { } previous)
+        {
+            store.RemoveExact(row.OldRoute, row.Culture);
+            store.Add(row.OldRoute, previous, row.Culture);
+            result = RowResult.Restored;
+        }
+        else
+        {
+            return RowResult.LeftAlone;
+        }
+
+        history.MarkRowUndone(importKey, row.RowNumber);
+        return result;
+    }
+
     private bool IsStillOurs(ImportRowRecord row) =>
         row.NewPageKey is { } page
         && store.Find(row.OldRoute, row.Culture).FirstOrDefault() is { AllCultures: false } current
         && current.PageKey == page;
+
+    private enum RowResult
+    {
+        Ignored,
+        Removed,
+        Restored,
+        LeftAlone,
+    }
 }

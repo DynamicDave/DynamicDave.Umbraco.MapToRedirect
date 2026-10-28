@@ -58,6 +58,10 @@ public class ImportDto
     [Column("failed")]
     public int Failed { get; set; }
 
+    [Column("changedCount")]
+    [Constraint(Default = "0")]
+    public int Changed { get; set; }
+
     /// <summary><see cref="ImportState"/>.</summary>
     [Column("state")]
     public int State { get; set; }

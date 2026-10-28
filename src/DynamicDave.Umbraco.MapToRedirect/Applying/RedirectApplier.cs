@@ -2,6 +2,7 @@ using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Planning;
 using DynamicDave.Umbraco.MapToRedirect.Redirects;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
+using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Infrastructure.Scoping;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Applying;
@@ -14,7 +15,13 @@ public sealed record ApplyResult(Guid ImportKey, ImportCounts Counts, IReadOnlyL
 /// again against the current state first; a row whose state changed since the test run is not executed and gets the
 /// outcome <see cref="ApplyOutcome.Changed"/>. Each row's redirect change and its history row share one scope.
 /// </summary>
-public sealed class RedirectApplier(IRedirectStore store, IImportHistory history, ISiteCatalog catalog, IScopeProvider scopeProvider, TimeProvider timeProvider)
+public sealed class RedirectApplier(
+    IRedirectStore store,
+    IImportHistory history,
+    ISiteCatalog catalog,
+    IScopeProvider scopeProvider,
+    TimeProvider timeProvider,
+    ILogger<RedirectApplier> logger)
 {
     /// <summary>Length of the user and file name columns.</summary>
     public const int MaxNameLength = 255;
@@ -24,8 +31,9 @@ public sealed class RedirectApplier(IRedirectStore store, IImportHistory history
 
     /// <param name="onDone">Called after each row with the number of rows done.</param>
     /// <remarks>
-    /// When a row throws, its change is rolled back, the import is completed as <see cref="ImportState.Partial"/>
-    /// with the rows done so far, and the exception is rethrown.
+    /// The import is created as <see cref="ImportState.Partial"/> and completed as <see cref="ImportState.Applied"/>
+    /// at the end, so a process that dies midway leaves an honest state. When a row throws, its change is rolled
+    /// back, the counts of the rows done so far are stored (state Partial), and the exception is rethrown.
     /// </remarks>
     public ApplyResult Apply(RedirectPlan plan, bool overwrite, Guid userKey, string userName, Action<int> onDone)
     {
@@ -43,8 +51,8 @@ public sealed class RedirectApplier(IRedirectStore store, IImportHistory history
             plan.RootKey,
             culture,
             overwrite,
-            new ImportCounts(0, 0, 0, 0, 0),
-            ImportState.Applied,
+            new ImportCounts(0, 0, 0, 0, 0, 0),
+            ImportState.Partial,
             null,
             null));
 
@@ -66,7 +74,16 @@ public sealed class RedirectApplier(IRedirectStore store, IImportHistory history
         }
         catch
         {
-            history.Complete(importId, Count(rows), ImportState.Partial);
+            // Must not hide the exception that stopped the loop.
+            try
+            {
+                history.Complete(importId, Count(rows), ImportState.Partial);
+            }
+            catch (Exception completeError)
+            {
+                logger.LogError(completeError, "Could not store the counts of partial import {ImportKey}.", importKey);
+            }
+
             throw;
         }
 
@@ -157,13 +174,13 @@ public sealed class RedirectApplier(IRedirectStore store, IImportHistory history
         _ => "Error.",
     };
 
-    // Changed rows changed nothing, like skipped ones.
     private static ImportCounts Count(IReadOnlyList<ImportRowRecord> rows) => new(
         rows.Count(r => r.Outcome == ApplyOutcome.Added),
         rows.Count(r => r.Outcome == ApplyOutcome.Replaced),
         rows.Count(r => r.Outcome == ApplyOutcome.AlreadyPresent),
-        rows.Count(r => r.Outcome is ApplyOutcome.Skipped or ApplyOutcome.Changed),
-        rows.Count(r => r.Outcome == ApplyOutcome.Failed));
+        rows.Count(r => r.Outcome == ApplyOutcome.Skipped),
+        rows.Count(r => r.Outcome == ApplyOutcome.Failed),
+        rows.Count(r => r.Outcome == ApplyOutcome.Changed));
 
     internal static string Cut(string value, int length) => value.Length > length ? value[..length] : value;
 }

@@ -18,12 +18,15 @@ public class ImportUndoerTests
     private readonly FakeRedirectStore _store = new();
     private readonly FakeImportHistory _history = new();
     private readonly List<int> _done = [];
+    private readonly FakeScopeProvider _scopes;
+
+    public ImportUndoerTests() => _scopes = new FakeScopeProvider(_store, _history);
 
     private Guid Import(params ImportRowRecord[] rows)
     {
         var key = Guid.NewGuid();
         var id = _history.Create(new ImportRecord(key, Now.UtcDateTime.AddDays(-1), Guid.NewGuid(), "Dave", "redirects.csv", Guid.NewGuid(), Culture,
-            true, new ImportCounts(0, 0, 0, 0, 0), ImportState.Applied, null, null));
+            true, new ImportCounts(0, 0, 0, 0, 0, 0), ImportState.Applied, null, null));
         foreach (var row in rows) _history.AddRow(id, row);
         return key;
     }
@@ -35,7 +38,7 @@ public class ImportUndoerTests
         new(rowNumber, route, Culture, ApplyOutcome.Replaced, page, replaced.PageKey, replaced.CreateDateUtc, "/old", "/new", null, replaced.AllCultures);
 
     private UndoResult Undo(Guid key, string userName = "Eve") =>
-        new ImportUndoer(_store, _history, new FixedTimeProvider(Now)).Undo(key, userName, _done.Add);
+        new ImportUndoer(_store, _history, _scopes, new FixedTimeProvider(Now)).Undo(key, userName, _done.Add);
 
     [Fact]
     public void Undo_removes_added_redirects()
@@ -150,6 +153,76 @@ public class ImportUndoerTests
         Assert.Equal(before, _store.Entries);
         Assert.Equal((0, 0, 0), (result.Removed, result.Restored, result.LeftAlone));
         Assert.Empty(result.LeftAloneRows);
+    }
+
+    [Fact]
+    public void Failure_between_removing_and_restoring_keeps_the_redirect_in_place()
+    {
+        _store.Add("1057/oud", Contact, Culture);
+        var replaced = _store.Effective("1057/oud", Culture)!;
+        _store.RemoveExact("1057/oud", Culture);
+        _store.Add("1057/oud", About, Culture);
+        var key = Import(Replaced(2, "1057/oud", About, replaced));
+        var before = _store.Entries.ToList();
+        _store.FailOnAdd = _store.Adds + 1;
+
+        Assert.Throws<InvalidOperationException>(() => Undo(key));
+
+        // RemoveExact ran, then Add failed: the scope rolled the removal back.
+        Assert.Equal(before, _store.Entries);
+        Assert.False(Assert.Single(_history.AllRows(key)).Undone);
+        Assert.Equal(ImportState.Applied, _history.Get(key)!.State);
+        var scope = Assert.Single(_scopes.Created);
+        Assert.False(scope.Completed);
+
+        _store.FailOnAdd = null;
+        var retry = Undo(key);
+
+        Assert.Equal(1, retry.Restored);
+        Assert.Equal(0, retry.LeftAlone);
+        Assert.Equal(Contact, Assert.Single(_store.Entries).PageKey);
+    }
+
+    [Fact]
+    public void Retry_after_a_partial_undo_counts_rows_already_undone()
+    {
+        _store.Add("1057/a", About, Culture);
+        _store.Add("1057/b", Contact, Culture);
+        _store.Add("1057/oud", Contact, Culture);
+        var replaced = _store.Effective("1057/oud", Culture)!;
+        _store.RemoveExact("1057/oud", Culture);
+        _store.Add("1057/oud", About, Culture);
+        var key = Import(Added(2, "1057/a", About), Added(3, "1057/b", Contact), Replaced(4, "1057/oud", About, replaced));
+        _store.FailOnAdd = _store.Adds + 1;
+
+        Assert.Throws<InvalidOperationException>(() => Undo(key));
+
+        Assert.Equal([true, true, false], _history.AllRows(key).Select(r => r.Undone));
+        Assert.Equal(ImportState.Applied, _history.Get(key)!.State);
+        Assert.Equal(0, _history.MarkUndoneCalls);
+
+        _store.FailOnAdd = null;
+        var retry = Undo(key);
+
+        Assert.Equal((2, 1, 0), (retry.Removed, retry.Restored, retry.LeftAlone));
+        Assert.Empty(retry.LeftAloneRows);
+        Assert.Equal(Contact, Assert.Single(_store.Entries).PageKey);
+        Assert.All(_history.AllRows(key), r => Assert.True(r.Undone));
+        Assert.Equal(ImportState.Undone, _history.Get(key)!.State);
+    }
+
+    [Fact]
+    public void Each_row_is_undone_in_one_completed_scope()
+    {
+        _store.Add("1057/a", About, Culture);
+        _store.Add("1057/b", Home, Culture);
+        var key = Import(Added(2, "1057/a", About), Added(3, "1057/b", Contact));
+
+        Undo(key);
+
+        Assert.Equal(2, _scopes.Created.Count);
+        Assert.All(_scopes.Created, s => Assert.True(s.Completed && s.Disposed));
+        Assert.Equal([true, false], _history.AllRows(key).Select(r => r.Undone));
     }
 
     [Fact]

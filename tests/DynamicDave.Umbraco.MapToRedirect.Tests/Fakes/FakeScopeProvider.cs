@@ -10,10 +10,10 @@ using IScopeProvider = Umbraco.Cms.Infrastructure.Scoping.IScopeProvider;
 namespace DynamicDave.Umbraco.MapToRedirect.Tests.Fakes;
 
 /// <summary>
-/// Scope provider that only tracks scopes: <see cref="Ambient"/> is the innermost open scope, completed scopes are
-/// counted. Database access is not supported.
+/// Scope provider without a database: <see cref="Ambient"/> is the innermost open scope. Each scope snapshots the
+/// participants when created and restores them when disposed without Complete, like a transaction rollback.
 /// </summary>
-internal sealed class FakeScopeProvider : IScopeProvider
+internal sealed class FakeScopeProvider(params IFakeTransactional[] participants) : IScopeProvider
 {
     private readonly Stack<FakeScope> _open = new();
 
@@ -34,7 +34,7 @@ internal sealed class FakeScopeProvider : IScopeProvider
         bool callContext = false,
         bool autoComplete = false)
     {
-        var scope = new FakeScope(this);
+        var scope = new FakeScope(this, participants.Select(p => (p, p.Snapshot())).ToList());
         Created.Add(scope);
         _open.Push(scope);
         return scope;
@@ -58,7 +58,7 @@ internal sealed class FakeScopeProvider : IScopeProvider
     }
 }
 
-internal sealed class FakeScope(FakeScopeProvider provider) : IScope
+internal sealed class FakeScope(FakeScopeProvider provider, IReadOnlyList<(IFakeTransactional Participant, object Snapshot)> snapshots) : IScope
 {
     public bool Completed { get; private set; }
 
@@ -86,6 +86,11 @@ internal sealed class FakeScope(FakeScopeProvider provider) : IScope
     {
         if (Disposed) return;
         Disposed = true;
+        if (!Completed)
+        {
+            foreach (var (participant, snapshot) in snapshots) participant.Restore(snapshot);
+        }
+
         provider.Close(this);
     }
 

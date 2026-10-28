@@ -4,6 +4,7 @@ using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Planning;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
 using DynamicDave.Umbraco.MapToRedirect.Tests.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Tests;
 
@@ -26,14 +27,16 @@ public class RedirectApplierTests
     private readonly FakeRedirectStore _store = new();
     private readonly FakeImportHistory _history = new();
     private readonly FakeSiteCatalog _catalog = new(Site, [Home, About, Contact]);
-    private readonly FakeScopeProvider _scopes = new();
+    private readonly FakeScopeProvider _scopes;
     private readonly List<int> _done = [];
+
+    public RedirectApplierTests() => _scopes = new FakeScopeProvider(_store, _history);
 
     private RedirectPlan Plan(params CsvRow[] rows) =>
         new RedirectPlanner(_store).Plan(Guid.NewGuid(), "redirects.csv", rows, Site, Culture, _catalog.Pages);
 
     private ApplyResult Apply(RedirectPlan plan, bool overwrite = false, string userName = "Dave") =>
-        new RedirectApplier(_store, _history, _catalog, _scopes, new FixedTimeProvider(Now)).Apply(plan, overwrite, UserKey, userName, _done.Add);
+        new RedirectApplier(_store, _history, _catalog, _scopes, new FixedTimeProvider(Now), NullLogger<RedirectApplier>.Instance).Apply(plan, overwrite, UserKey, userName, _done.Add);
 
     [Fact]
     public void Adds_new_redirects_and_records_history()
@@ -46,7 +49,7 @@ public class RedirectApplierTests
         Assert.Equal(Contact.Key, _store.Effective("1057/contact-us", Culture)?.PageKey);
         Assert.All(_store.Entries, e => Assert.Equal(Culture, e.Culture));
 
-        Assert.Equal(new ImportCounts(2, 0, 0, 0, 0), result.Counts);
+        Assert.Equal(new ImportCounts(2, 0, 0, 0, 0, 0), result.Counts);
         Assert.Equal(
             [
                 new ImportRowRecord(2, "1057/oud/wie", Culture, ApplyOutcome.Added, About.Key, null, null, "/oud/wie", "/over-ons", null),
@@ -58,7 +61,7 @@ public class RedirectApplierTests
         Assert.NotNull(import);
         Assert.Equal(
             new ImportRecord(result.ImportKey, Now.UtcDateTime, UserKey, "Dave", "redirects.csv", Site.RootKey, Culture, false,
-                new ImportCounts(2, 0, 0, 0, 0), ImportState.Applied, null, null),
+                new ImportCounts(2, 0, 0, 0, 0, 0), ImportState.Applied, null, null),
             import);
         Assert.Equal(result.Rows, _history.AllRows(result.ImportKey));
         Assert.Equal([1, 2], _done);
@@ -83,7 +86,7 @@ public class RedirectApplierTests
         Assert.Equal(Home.Key, row.ReplacedPageKey);
         Assert.Equal(replaced.CreateDateUtc, row.ReplacedCreateDateUtc);
         Assert.False(row.ReplacedAllCultures);
-        Assert.Equal(new ImportCounts(0, 1, 0, 0, 0), result.Counts);
+        Assert.Equal(new ImportCounts(0, 1, 0, 0, 0, 0), result.Counts);
         Assert.Equal(row, Assert.Single(_history.AllRows(result.ImportKey)));
     }
 
@@ -121,7 +124,7 @@ public class RedirectApplierTests
         Assert.Equal(ApplyOutcome.Skipped, row.Outcome);
         Assert.Equal(About.Key, row.NewPageKey);
         Assert.Null(row.ReplacedPageKey);
-        Assert.Equal(new ImportCounts(0, 0, 0, 1, 0), result.Counts);
+        Assert.Equal(new ImportCounts(0, 0, 0, 1, 0, 0), result.Counts);
     }
 
     [Fact]
@@ -135,7 +138,7 @@ public class RedirectApplierTests
 
         Assert.Equal(before, _store.Entries);
         Assert.Equal(ApplyOutcome.AlreadyPresent, Assert.Single(result.Rows).Outcome);
-        Assert.Equal(new ImportCounts(0, 0, 1, 0, 0), result.Counts);
+        Assert.Equal(new ImportCounts(0, 0, 1, 0, 0, 0), result.Counts);
     }
 
     [Fact]
@@ -150,7 +153,7 @@ public class RedirectApplierTests
         var row = Assert.Single(result.Rows);
         Assert.Equal(ApplyOutcome.Changed, row.Outcome);
         Assert.False(string.IsNullOrWhiteSpace(row.Message));
-        Assert.Equal(new ImportCounts(0, 0, 0, 1, 0), result.Counts);
+        Assert.Equal(new ImportCounts(0, 0, 0, 0, 0, 1), result.Counts);
     }
 
     [Fact]
@@ -208,7 +211,7 @@ public class RedirectApplierTests
         Assert.Equal(0, _store.FindCalls);
         Assert.Equal([ApplyOutcome.Skipped, ApplyOutcome.Failed, ApplyOutcome.Skipped], result.Rows.Select(r => r.Outcome));
         Assert.All(result.Rows, r => Assert.False(string.IsNullOrWhiteSpace(r.Message)));
-        Assert.Equal(new ImportCounts(0, 0, 0, 2, 1), result.Counts);
+        Assert.Equal(new ImportCounts(0, 0, 0, 2, 1, 0), result.Counts);
         Assert.Equal([1, 2, 3], _done);
     }
 
@@ -226,10 +229,31 @@ public class RedirectApplierTests
 
         var import = Assert.Single(_history.List(0, 10).Items);
         Assert.Equal(ImportState.Partial, import.State);
-        Assert.Equal(new ImportCounts(2, 0, 0, 0, 0), import.Counts);
+        Assert.Equal(new ImportCounts(2, 0, 0, 0, 0, 0), import.Counts);
         Assert.Equal([2, 3], _history.AllRows(import.Key).Select(r => r.RowNumber));
         Assert.Equal(2, _store.Entries.Count);
         Assert.Equal([1, 2], _done);
+    }
+
+    [Fact]
+    public void Import_is_created_partial_and_completed_as_applied()
+    {
+        var result = Apply(Plan(new CsvRow(2, "/a", "/over-ons")));
+
+        Assert.Equal([ImportState.Partial], _history.CreatedStates);
+        Assert.Equal(ImportState.Applied, _history.Get(result.ImportKey)!.State);
+    }
+
+    [Fact]
+    public void Failure_to_record_partial_state_does_not_hide_the_original_error()
+    {
+        var plan = Plan(new CsvRow(2, "/a", "/over-ons"));
+        _store.FailOnAdd = 1;
+        _history.FailOnComplete = new TimeoutException("History unavailable.");
+
+        var error = Assert.Throws<InvalidOperationException>(() => Apply(plan));
+
+        Assert.Equal("Database unavailable.", error.Message);
     }
 
     [Fact]

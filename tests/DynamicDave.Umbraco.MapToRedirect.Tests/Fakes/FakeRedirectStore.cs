@@ -6,14 +6,25 @@ namespace DynamicDave.Umbraco.MapToRedirect.Tests.Fakes;
 /// In-memory redirect list with the <see cref="IRedirectStore"/> contract: Find returns the redirect in effect (the
 /// newest of the culture, else the newest culture-less one), RemoveExact removes only rows of the culture. Counts
 /// lookups so tests can check how often the store is read. <see cref="FailOnAdd"/> makes the n-th Add (1-based)
-/// throw; <see cref="Ambient"/>, when set, is read on every change and stored in <see cref="ChangeScopes"/>.
+/// throw (<see cref="Adds"/> counts the calls so far); <see cref="Ambient"/>, when set, is read on every change and
+/// stored in <see cref="ChangeScopes"/>. Takes part in <see cref="FakeScopeProvider"/> scopes (rollback of Entries).
 /// </summary>
-internal sealed class FakeRedirectStore : IRedirectStore
+internal sealed class FakeRedirectStore : IRedirectStore, IFakeTransactional
 {
     private DateTime _clock = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     private int _adds;
 
     public List<StoredRedirect> Entries { get; } = [];
+
+    public int Adds => _adds;
+
+    public object Snapshot() => Entries.ToList();
+
+    public void Restore(object snapshot)
+    {
+        Entries.Clear();
+        Entries.AddRange((List<StoredRedirect>)snapshot);
+    }
 
     public int FindCalls { get; private set; }
 

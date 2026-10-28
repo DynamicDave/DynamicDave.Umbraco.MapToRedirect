@@ -22,5 +22,11 @@ public interface IImportHistory
 
     IReadOnlyList<ImportRowRecord> AllRows(Guid key);
 
+    /// <summary>
+    /// Marks the row with the row number of the import as undone. Joins an ambient scope, so it is written together
+    /// with the redirect changes that undo the row.
+    /// </summary>
+    void MarkRowUndone(Guid key, int rowNumber);
+
     void MarkUndone(Guid key, string userName, DateTime utc);
 }

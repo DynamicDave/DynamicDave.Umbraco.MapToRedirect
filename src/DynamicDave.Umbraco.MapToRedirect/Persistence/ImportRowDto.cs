@@ -53,6 +53,11 @@ public class ImportRowDto
     [Constraint(Default = "0")]
     public bool ReplacedAllCultures { get; set; }
 
+    /// <summary>The row was undone (an undo that stopped midway skips it when retried).</summary>
+    [Column("undone")]
+    [Constraint(Default = "0")]
+    public bool Undone { get; set; }
+
     [Column("oldUrl")]
     [SpecialDbType(SpecialDbTypes.NVARCHARMAX)]
     [NullSetting(NullSetting = NullSettings.Null)]
