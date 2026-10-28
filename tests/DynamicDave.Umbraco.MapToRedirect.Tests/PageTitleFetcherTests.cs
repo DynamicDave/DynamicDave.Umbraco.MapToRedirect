@@ -87,3 +87,66 @@ public class PageTitleFetcherTests
         Assert.Equal(4, max);
     }
 }
+
+public class PageTitleFetcherFixTests
+{
+    private static readonly IPAddress[] Public = [IPAddress.Parse("93.184.216.34")];
+
+    private sealed class ThrowingHandler(Exception ex) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw ex;
+    }
+
+    private sealed class BytesHandler(byte[] body, string contentType) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var content = new ByteArrayContent(body);
+            content.Headers.TryAddWithoutValidation("Content-Type", contentType);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+    }
+
+    [Fact]
+    public async Task Unexpected_exception_gives_null_for_that_url()
+    {
+        var fetcher = new PageTitleFetcher(new ThrowingHandler(new UriFormatException("bad")), _ => Public, false, TimeSpan.FromSeconds(5));
+        var result = await fetcher.FetchAsync(["https://old.example/a"], _ => { }, default);
+
+        Assert.Null(result["https://old.example/a"]);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_propagates()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var fetcher = new PageTitleFetcher(new ThrowingHandler(new OperationCanceledException(cts.Token)), _ => Public, false, TimeSpan.FromSeconds(5));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetcher.FetchAsync(["https://old.example/a"], _ => { }, cts.Token));
+    }
+
+    [Fact]
+    public async Task Decodes_windows_1252_from_header()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var body = System.Text.Encoding.GetEncoding(1252).GetBytes("<title>Caf\u00e9 | Oud</title>");
+        var fetcher = new PageTitleFetcher(new BytesHandler(body, "text/html; charset=windows-1252"), _ => Public, false, TimeSpan.FromSeconds(5));
+
+        var result = await fetcher.FetchAsync(["https://old.example/a"], _ => { }, default);
+
+        Assert.Equal("Caf\u00e9", result["https://old.example/a"]);
+    }
+
+    [Fact]
+    public async Task Decodes_windows_1252_from_meta_when_header_has_no_charset()
+    {
+        var body = System.Text.Encoding.GetEncoding(1252).GetBytes("<meta charset=\"windows-1252\"><title>Caf\u00e9 | Oud</title>");
+        var fetcher = new PageTitleFetcher(new BytesHandler(body, "text/html"), _ => Public, false, TimeSpan.FromSeconds(5));
+
+        var result = await fetcher.FetchAsync(["https://old.example/a"], _ => { }, default);
+
+        Assert.Equal("Caf\u00e9", result["https://old.example/a"]);
+    }
+}

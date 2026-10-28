@@ -90,7 +90,9 @@ public class PageMatcher
             }
 
             var parentScore = TextSimilarity.Dice(parent, entry.ParentTokens);
-            if (winner is null || score > winnerScore || (score == winnerScore && parentScore > winnerParent))
+            if (winner is null || score > winnerScore
+                || (score == winnerScore && (parentScore > winnerParent
+                    || (parentScore == winnerParent && string.CompareOrdinal(entry.Page.Path, winner.Page.Path) < 0))))
             {
                 winner = entry;
                 winnerScore = score;
@@ -126,12 +128,10 @@ public class PageMatcher
         {
             return byUrl;
         }
-
-        var path = UrlNormalizer.Normalize(oldPath);
-        var parent = TextSimilarity.Tokens(path is null ? null : ParentOf(path));
-
+        // A title is only trusted when exactly one page has the top score; shared titles ("Nieuws") stay with the URL result.
         Entry? winner = null;
-        double winnerScore = 0, winnerParent = 0;
+        var winnerScore = 0.0;
+        var tied = false;
         foreach (var entry in _entries)
         {
             var score = Math.Max(
@@ -142,16 +142,19 @@ public class PageMatcher
                 continue;
             }
 
-            var parentScore = TextSimilarity.Dice(parent, entry.ParentTokens);
-            if (winner is null || score > winnerScore || (score == winnerScore && parentScore > winnerParent))
+            if (winner is null || score > winnerScore)
             {
                 winner = entry;
                 winnerScore = score;
-                winnerParent = parentScore;
+                tied = false;
+            }
+            else if (score == winnerScore && entry.Page != winner.Page)
+            {
+                tied = true;
             }
         }
 
-        return winner is null ? byUrl : new MatchResult(MatchKind.Likely, winner.Page, MatchNote.SimilarTitle);
+        return winner is null || tied ? byUrl : new MatchResult(MatchKind.Likely, winner.Page, MatchNote.SimilarTitle);
     }
 
     private static double ParentScore(SitePage page, HashSet<string> oldParent) =>

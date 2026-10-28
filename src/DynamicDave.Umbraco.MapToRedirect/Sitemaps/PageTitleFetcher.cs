@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -107,27 +106,70 @@ public class PageTitleFetcher
 
             return TitleText.Extract(Decode(buffer.AsSpan(0, total), response.Content.Headers.ContentType?.CharSet));
         }
-        catch (Exception ex) when (ex is PrivateNetworkBlockedException or HttpRequestException or SocketException or TimeoutException or IOException
-                                   || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Any failure of one page (network, hostile redirect, parsing) only means "no title" for that page.
+            return null;
+        }
+    }
+
+    private static string Decode(ReadOnlySpan<byte> bytes, string? headerCharset)
+    {
+        var encoding = FindEncoding(headerCharset) ?? FindEncoding(SniffMetaCharset(bytes)) ?? Encoding.UTF8;
+        return encoding.GetString(bytes);
+    }
+
+    private static Encoding? FindEncoding(string? charset)
+    {
+        var name = charset?.Trim().Trim('"', '\'').Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            return null;
+        }
+
+        try
+        {
+            return CodePagesEncodingProvider.Instance.GetEncoding(name) ?? Encoding.GetEncoding(name);
+        }
+        catch (ArgumentException)
         {
             return null;
         }
     }
 
-    private static string Decode(ReadOnlySpan<byte> bytes, string? charset)
+    /// <summary>Reads the charset of a <c>&lt;meta charset&gt;</c> or http-equiv Content-Type tag in the first 4 KB.</summary>
+    private static string? SniffMetaCharset(ReadOnlySpan<byte> bytes)
     {
-        if (!string.IsNullOrWhiteSpace(charset))
+        var head = Encoding.Latin1.GetString(bytes[..Math.Min(bytes.Length, 4096)]);
+        var index = head.IndexOf("charset", StringComparison.OrdinalIgnoreCase);
+        while (index >= 0)
         {
-            try
+            var i = index + "charset".Length;
+            while (i < head.Length && head[i] == ' ')
             {
-                return Encoding.GetEncoding(charset.Trim('"', '\'')).GetString(bytes);
+                i++;
             }
-            catch (ArgumentException)
+
+            if (i < head.Length && head[i] == '=')
             {
-                // Unknown charset: fall back to UTF-8.
+                i++;
+                while (i < head.Length && head[i] is ' ' or '"' or '\'')
+                {
+                    i++;
+                }
+
+                var start = i;
+                while (i < head.Length && (char.IsLetterOrDigit(head[i]) || head[i] is '-' or '_' or ':' or '.'))
+                {
+                    i++;
+                }
+
+                return i > start ? head[start..i] : null;
             }
+
+            index = head.IndexOf("charset", index + 1, StringComparison.OrdinalIgnoreCase);
         }
 
-        return Encoding.UTF8.GetString(bytes);
+        return null;
     }
 }

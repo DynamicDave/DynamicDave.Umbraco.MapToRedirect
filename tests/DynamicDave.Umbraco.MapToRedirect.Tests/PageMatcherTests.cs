@@ -146,3 +146,32 @@ public class PageMatcherTests
         Assert.Equal(0.0, TextSimilarity.Score("", "abc"));
     }
 }
+
+public class PageMatcherFixTests
+{
+    private static SitePage Page(string path, string name) =>
+        new(Guid.NewGuid(), path, UrlNormalizer.Slug(path), name, null);
+
+    [Fact]
+    public void Title_tie_between_pages_keeps_url_result()
+    {
+        var matcher = new PageMatcher([Page("/a/nieuws", "Nieuws"), Page("/b/nieuws-archief", "Nieuws")]);
+        var result = matcher.MatchWithTitle("/old/x", "Nieuws");
+
+        Assert.Equal(MatchKind.None, result.Kind);
+        Assert.Null(result.Page);
+        Assert.Equal(MatchNote.None, result.Note);
+    }
+
+    [Fact]
+    public void Guess_result_does_not_depend_on_page_order()
+    {
+        var p1 = Page("/a/zeta-team", "Team");
+        var p2 = Page("/b/alpha-team", "Team");
+        var first = new PageMatcher([p1, p2]).Match("/old/team");
+        var second = new PageMatcher([p2, p1]).Match("/old/team");
+
+        Assert.Equal(first.Page!.Path, second.Page!.Path);
+        Assert.Equal("/a/zeta-team", first.Page.Path);
+    }
+}
