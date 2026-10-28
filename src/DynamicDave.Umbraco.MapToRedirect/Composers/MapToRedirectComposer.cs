@@ -18,6 +18,7 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddOptions<MapToRedirectOptions>().Configure(options => MapToRedirectOptions.Bind(builder.Config.GetSection(Constants.OptionsSection), options));
 
         builder.Services.AddScoped<SitemapReader>();
+        builder.Services.AddScoped<PageTitleFetcher>();
         builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();
 
         // Redirects are followed manually (SafeHttp) so every target can be checked. Private network targets are
