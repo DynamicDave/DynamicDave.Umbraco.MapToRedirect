@@ -26,7 +26,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
     internal TimeSpan[] FinalWriteRetryDelays { get; init; } =
         [TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000)];
 
-    private static readonly JsonSerializerOptions Json =new() { Converters = { new JsonStringEnumConverter() } };
+    private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
 
     private readonly IKeyValueService _keyValues = keyValues;
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
@@ -57,13 +57,21 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
         ArgumentNullException.ThrowIfNull(work);
 
         // Every claim is a compare-and-set on the raw stored value, which covers other servers; the package migration
-        // (SeedJobState) creates the row, so there is always a value to compare against. The lock only spares this
-        // process a database round trip for a double click.
+        // (SeedJobState) creates the row, so there is a value to compare against. The lock only spares this process a
+        // database round trip for a double click.
         lock (_startGate)
         {
-            var raw = _keyValues.GetValue(Constants.JobStateKey)
-                ?? throw new InvalidOperationException(
-                    $"The job state row '{Constants.JobStateKey}' is missing; run the {Constants.PackageName} package migration.");
+            var raw = _keyValues.GetValue(Constants.JobStateKey);
+            if (raw is null)
+            {
+                // Removed after the migration ran (compare-and-set fails for a missing row): recreate it empty, as the
+                // migration does, and claim it with the normal compare-and-set.
+                _logger.LogWarning(
+                    "The job state row {Key} of {Package} was missing; it is recreated", Constants.JobStateKey, Constants.PackageName);
+                _keyValues.SetValue(Constants.JobStateKey, string.Empty);
+                raw = string.Empty;
+            }
+
             var now = Now();
             var current = Deserialize(raw);
             if (current is { Status: JobStatus.Running } && !IsStale(current, now))

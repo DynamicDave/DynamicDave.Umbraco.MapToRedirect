@@ -152,13 +152,18 @@ public class JobRunnerTests
         Assert.Equal(otherStarted.Id, _runner.Current()!.Id);
     }
 
+    // The row is created by the package migration (SeedJobState); when it is gone anyway the job slot heals itself.
     [Fact]
-    public void A_missing_state_row_is_never_written_without_compare_and_set()
+    public async Task A_missing_state_row_is_recreated_with_a_warning_and_the_job_starts()
     {
         _keyValues.Values.Clear();
 
-        Assert.Throws<InvalidOperationException>(() => _runner.TryStart(JobKind.Generate, UserKey, "Dave", Returning()));
-        Assert.Empty(_keyValues.Values);
+        var started = _runner.TryStart(JobKind.Generate, UserKey, "Dave", Returning());
+
+        Assert.NotNull(started);
+        await _runner.LastRun!;
+        Assert.Equal((started.Id, JobStatus.Completed), (_runner.Current()!.Id, _runner.Current()!.Status));
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains(Constants.JobStateKey));
     }
 
     [Fact]
