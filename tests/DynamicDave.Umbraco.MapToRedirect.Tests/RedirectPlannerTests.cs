@@ -143,6 +143,35 @@ public class RedirectPlannerTests
     }
 
     [Fact]
+    public void Old_urls_with_the_same_route_are_duplicates()
+    {
+        IReadOnlyList<SitePage> pages = [new(Guid.NewGuid(), "/en/about", "about", "About", null), new(Guid.NewGuid(), "/en/contact", "contact", "Contact", null)];
+        var site = new SiteInfo(
+            Guid.NewGuid(), 1061, "Home", ["klant.nl"], ["en-US"],
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"] },
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["/en"] });
+
+        var rows = new RedirectPlanner(_store).Plan(
+            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old", "/en/about"), new CsvRow(3, "/old", "/en/contact")], site, "en-US", pages).Rows;
+
+        Assert.Equal((PlanOutcome.Add, "1061/old"), (rows[0].Outcome, rows[0].Route));
+        Assert.Equal((PlanOutcome.Skip, PlanReason.Duplicate, "1061/old"), (rows[1].Outcome, rows[1].Reason, rows[1].Route));
+    }
+
+    [Fact]
+    public void Existing_redirects_are_loaded_once_per_plan()
+    {
+        _store.Add("1057/a", Contact.Key, Culture);
+        _store.Add("1057/b", Home.Key, "");
+
+        var rows = Plan(new CsvRow(2, "/a", "/contact"), new CsvRow(3, "/b", "/contact"), new CsvRow(4, "/c", "/contact")).Rows;
+
+        Assert.Equal([PlanOutcome.AlreadyPresent, PlanOutcome.Conflict, PlanOutcome.Add], rows.Select(r => r.Outcome));
+        Assert.Equal(1, _store.LoadAllCalls);
+        Assert.Equal(0, _store.FindCalls);
+    }
+
+    [Fact]
     public void Redirect_in_another_culture_does_not_count()
     {
         _store.Add("1057/oud", Contact.Key, "de-DE");

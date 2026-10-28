@@ -16,6 +16,9 @@ public interface IRedirectStore
     /// </summary>
     IReadOnlyList<ExistingRedirect> Find(string route, string culture);
 
+    /// <summary>Every redirect of the installation, for building <see cref="EffectiveRedirects"/> once per plan.</summary>
+    IReadOnlyList<StoredRedirect> LoadAll();
+
     void Add(string route, Guid pageKey, string culture);
 
     /// <summary>

@@ -5,7 +5,7 @@ using DynamicDave.Umbraco.MapToRedirect.Urls;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Planning;
 
-/// <summary>The test run: one outcome per CSV row (spec 4.4). Reads the redirect list, never changes it.</summary>
+/// <summary>The test run: one outcome per CSV row (spec 4.4). Reads the redirect list once per plan, never changes it.</summary>
 public sealed class RedirectPlanner(IRedirectStore store)
 {
     /// <summary>Length of the import file name column.</summary>
@@ -17,19 +17,26 @@ public sealed class RedirectPlanner(IRedirectStore store)
         var byKey = new Dictionary<Guid, SitePage>();
         foreach (var page in pages) byKey.TryAdd(page.Key, page);
 
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var existing = new EffectiveRedirects(store.LoadAll());
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var planned = new List<PlanRow>(rows.Count);
         foreach (var row in rows)
         {
-            planned.Add(PlanRow(row, site, culture, pages, byKey, seen));
+            planned.Add(PlanRow(row, site, culture, pages, byKey, seen, existing));
         }
 
         var name = fileName.Length > MaxFileNameLength ? fileName[..MaxFileNameLength] : fileName;
         return new RedirectPlan(id, site.RootKey, culture, name, planned);
     }
 
-    private PlanRow PlanRow(
-        CsvRow row, SiteInfo site, string culture, IReadOnlyList<SitePage> pages, Dictionary<Guid, SitePage> byKey, HashSet<string> seen)
+    private static PlanRow PlanRow(
+        CsvRow row,
+        SiteInfo site,
+        string culture,
+        IReadOnlyList<SitePage> pages,
+        Dictionary<Guid, SitePage> byKey,
+        HashSet<string> seen,
+        EffectiveRedirects existing)
     {
         var result = new PlanRow(row.RowNumber, row.OldUrl, row.NewUrl, null, null, null, null, PlanOutcome.Error, PlanReason.InvalidOldUrl, null, null, false);
 
@@ -38,8 +45,9 @@ public sealed class RedirectPlanner(IRedirectStore store)
 
         result = result with { OldPath = oldPath, Route = RedirectRoute.For(site, culture, oldPath) };
 
-        // The first row of an old path wins, whatever its outcome.
-        if (!seen.Add(oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.Duplicate);
+        // The first row of a route wins, whatever its outcome. Different old paths can share a route ("/en/x" and "/x" on
+        // a domain with path prefix "/en").
+        if (!seen.Add(result.Route!)) return Outcome(result, PlanOutcome.Skip, PlanReason.Duplicate);
 
         var newUrl = row.NewUrl.Trim();
         if (newUrl.Length == 0) return Outcome(result, PlanOutcome.Skip, PlanReason.EmptyNewUrl);
@@ -68,7 +76,7 @@ public sealed class RedirectPlanner(IRedirectStore store)
         if (SiteCatalogRules.IsPublishedPath(pages, oldPath)) return Outcome(result, PlanOutcome.Skip, PlanReason.PageExistsAtPath);
 
         // The redirect in effect may be a culture-less one (all languages); ours would override it for this culture.
-        var current = store.Find(result.Route!, culture).FirstOrDefault();
+        var current = existing.Find(result.Route!, culture);
         if (current is null) return Outcome(result, PlanOutcome.Add, PlanReason.None);
         if (current.PageKey == target.Key) return Outcome(result, PlanOutcome.AlreadyPresent, PlanReason.None);
 

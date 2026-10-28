@@ -61,6 +61,29 @@ public class UmbracoRedirectStoreTests
     }
 
     [Fact]
+    public void Find_compares_the_route_case_insensitively_and_treats_a_blank_culture_as_culture_less()
+    {
+        _service.Register("1057/Oud", PageA, " ");
+
+        var redirect = Assert.Single(Store.Find("1057/oud", "nl-NL"));
+        Assert.Equal((PageA, true), (redirect.PageKey, redirect.AllCultures));
+    }
+
+    [Fact]
+    public void LoadAll_pages_through_every_redirect()
+    {
+        for (var i = 0; i < 2500; i++) _service.Register($"1057/oud-{i}", PageA, i % 2 == 0 ? "nl-NL" : null);
+
+        var all = Store.LoadAll();
+
+        Assert.Equal(2500, all.Count);
+        Assert.Equal(2500, all.Select(r => r.Key).Distinct().Count());
+        Assert.Equal([(0L, 1000), (1L, 1000), (2L, 1000)], _service.PageRequests);
+        var row = _service.Rows.Single(r => r.Url == "1057/oud-1");
+        Assert.Contains(new StoredRedirect(row.Key, "1057/oud-1", "", PageA, row.CreateDateUtc), all);
+    }
+
+    [Fact]
     public void Find_ignores_other_cultures_and_routes()
     {
         _service.Register("1057/oud", PageA, "de-DE");
