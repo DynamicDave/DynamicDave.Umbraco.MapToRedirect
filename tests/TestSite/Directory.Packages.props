@@ -13,7 +13,7 @@
       Umbraco version the TestSite runs on. The package itself is still built against its own minimum version, like
       on a real site. Run on another version with e.g. dotnet run -p:TestSiteUmbracoVersion=18.2.1
     -->
-    <TestSiteUmbracoVersion Condition="'$(TestSiteUmbracoVersion)' == ''">17.7.1</TestSiteUmbracoVersion>
+    <TestSiteUmbracoVersion Condition="'$(TestSiteUmbracoVersion)' == ''">17.7.2</TestSiteUmbracoVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Umbraco.Cms" Version="$(TestSiteUmbracoVersion)" />
