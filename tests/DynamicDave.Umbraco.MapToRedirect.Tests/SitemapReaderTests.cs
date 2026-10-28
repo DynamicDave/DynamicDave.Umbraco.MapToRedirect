@@ -265,4 +265,72 @@ public class SitemapReaderTests
 
         Assert.Equal(2, counts[^1]);
     }
+
+    [Fact]
+    public async Task Stalled_body_times_out()
+    {
+        var handler = new FakeHttpHandler().Add("https://old.example/sitemap.xml", () =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream("<?xml version=\"1.0\"?><urlset>"u8.ToArray())) });
+        var reader = new SitemapReader(handler, _ => Public, false, timeout: TimeSpan.FromMilliseconds(200));
+
+        var read = reader.ReadAsync("https://old.example/sitemap.xml", null, default);
+        var finished = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(10)));
+
+        Assert.Same(read, finished);
+        Assert.Equal(SitemapError.Unreachable, (await read).Error);
+    }
+
+    [Fact]
+    public async Task Index_children_beyond_the_file_limit_are_never_queued_or_requested()
+    {
+        var handler = new FakeHttpHandler()
+            .Text("https://old.example/sitemap.xml", Index(Enumerable.Range(1, 200).Select(i => $"https://old.example/s{i}.xml").ToArray()));
+
+        var result = await Reader(handler).ReadAsync("https://old.example/sitemap.xml", null, default);
+
+        Assert.Contains(SitemapLimit.Files, result.LimitsReached);
+        Assert.Equal(50, handler.Requests.Count); // the index itself and 49 children
+    }
+
+    /// <summary>Delivers the given bytes, then never completes (honours cancellation like a real socket stream).</summary>
+    private sealed class StallingStream(byte[] head) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_position < head.Length)
+            {
+                var n = Math.Min(buffer.Length, head.Length - _position);
+                head.AsSpan(_position, n).CopyTo(buffer.Span);
+                _position += n;
+                return n;
+            }
+
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

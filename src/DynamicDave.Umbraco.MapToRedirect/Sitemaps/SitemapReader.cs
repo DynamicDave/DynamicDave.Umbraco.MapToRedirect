@@ -35,7 +35,8 @@ public class SitemapReader
     private const int MaxUrls = 50_000;
     private const int MaxFileBytes = 50 * 1024 * 1024;
     private const int MaxRedirects = 5;
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _timeout;
 
     private readonly Func<HttpClient> _client;
     private readonly Func<bool> _allowPrivate;
@@ -55,6 +56,7 @@ public class SitemapReader
         _resolve = Dns.GetHostAddresses;
         _maxUrls = MaxUrls;
         _maxFileBytes = MaxFileBytes;
+        _timeout = DefaultTimeout;
         _logger = logger;
     }
 
@@ -63,7 +65,8 @@ public class SitemapReader
         Func<string, IPAddress[]> resolve,
         bool allowPrivate,
         int maxUrls = MaxUrls,
-        int maxFileBytes = MaxFileBytes)
+        int maxFileBytes = MaxFileBytes,
+        TimeSpan? timeout = null)
     {
         var client = new HttpClient(handler, disposeHandler: false);
         _client = () => client;
@@ -71,6 +74,7 @@ public class SitemapReader
         _resolve = resolve;
         _maxUrls = maxUrls;
         _maxFileBytes = maxFileBytes;
+        _timeout = timeout ?? DefaultTimeout;
     }
 
     /// <summary>
@@ -107,7 +111,7 @@ public class SitemapReader
         }
 
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var filesRead = 0;
+
         while (queue.Count > 0 && !state.UrlLimitHit)
         {
             ct.ThrowIfCancellationRequested();
@@ -117,13 +121,13 @@ public class SitemapReader
                 continue;
             }
 
-            if (filesRead >= MaxFiles)
+            if (state.FilesRead >= MaxFiles)
             {
                 state.Limits.Add(SitemapLimit.Files);
                 break;
             }
 
-            filesRead++;
+            state.FilesRead++;
             await ReadFileAsync(client, next, allowPrivate, queue, state, ct);
         }
 
@@ -157,9 +161,9 @@ public class SitemapReader
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(RequestTimeout);
+            timeout.CancelAfter(_timeout);
             var robots = new Uri(site, "/robots.txt");
-            using var response = await SafeHttp.GetAsync(client, robots, allowPrivate, _resolve, MaxRedirects, RequestTimeout, ct);
+            using var response = await SafeHttp.GetAsync(client, robots, allowPrivate, _resolve, MaxRedirects, _timeout, timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
                 return found;
@@ -204,9 +208,9 @@ public class SitemapReader
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(RequestTimeout);
+            timeout.CancelAfter(_timeout);
 
-            using var response = await SafeHttp.GetAsync(client, url, allowPrivate, _resolve, MaxRedirects, RequestTimeout, ct);
+            using var response = await SafeHttp.GetAsync(client, url, allowPrivate, _resolve, MaxRedirects, _timeout, timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
                 state.Fail(SitemapError.Unreachable);
@@ -220,7 +224,7 @@ public class SitemapReader
             await using var buffered = new PrefixedStream(prefix.AsMemory(0, prefixLength).ToArray(), raw);
             var gzip = prefixLength == 2 && prefix[0] == 0x1f && prefix[1] == 0x8b;
             await using Stream plain = gzip ? new GZipStream(buffered, CompressionMode.Decompress) : buffered;
-            await using var limited = new LimitedStream(plain, _maxFileBytes);
+            await using var limited = new LimitedStream(plain, _maxFileBytes, timeout.Token);
 
             await ParseAsync(limited, response.RequestMessage?.RequestUri ?? url, queue, state, timeout.Token);
         }
@@ -284,6 +288,12 @@ public class SitemapReader
 
             if (isIndex)
             {
+                if (state.FilesRead + queue.Count >= MaxFiles)
+                {
+                    state.Limits.Add(SitemapLimit.Files);
+                    continue;
+                }
+
                 queue.Enqueue(target);
             }
             else if (!state.Add(target.AbsoluteUri, _maxUrls))
@@ -324,6 +334,8 @@ public class SitemapReader
 
         public bool UrlLimitHit { get; private set; }
 
+        public int FilesRead { get; set; }
+
         /// <summary>Adds a URL unless its normalized path is known. Returns false once the URL limit is hit.</summary>
         public bool Add(string url, int maxUrls)
         {
@@ -362,7 +374,7 @@ public class SitemapReader
     private sealed class FileSizeLimitException : IOException;
 
     /// <summary>Counts the bytes read from the (decompressed) stream and throws when the cap is exceeded.</summary>
-    private sealed class LimitedStream(Stream inner, long limit) : Stream
+    private sealed class LimitedStream(Stream inner, long limit, CancellationToken token) : Stream
     {
         private long _total;
 
@@ -385,7 +397,7 @@ public class SitemapReader
         public override int Read(Span<byte> buffer) => Count(inner.Read(buffer));
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            Count(await inner.ReadAsync(buffer, cancellationToken));
+            Count(await inner.ReadAsync(buffer, token));
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
             ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
