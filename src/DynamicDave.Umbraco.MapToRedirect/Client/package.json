@@ -1,7 +1,7 @@
 {
   "name": "dynamic-dave-umbraco-map-to-redirect",
   "private": true,
-  "version": "18.0.0",
+  "version": "18.0.1",
   "type": "module",
   "scripts": {
     "watch": "tsc && vite build --watch",

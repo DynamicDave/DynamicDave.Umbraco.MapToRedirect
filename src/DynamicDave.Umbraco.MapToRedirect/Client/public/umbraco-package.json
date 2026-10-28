@@ -1,7 +1,7 @@
 {
   "id": "DynamicDave.Umbraco.MapToRedirect",
   "name": "DynamicDave.Umbraco.MapToRedirect",
-  "version": "18.0.0",
+  "version": "18.0.1",
   "allowTelemetry": true,
   "AuthorDetails": {
     "Name": "Dynamic Dave",
