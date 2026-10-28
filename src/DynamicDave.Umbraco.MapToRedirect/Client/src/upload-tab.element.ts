@@ -290,23 +290,25 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
     const job = this.job;
     if (job?.kind === 'Apply' && job.status === 'Running' && job.id === this.#watching) return progressTemplate(this.localize, job);
     const applied = this._applied;
-    if (!applied || isBannerDismissed(applied.id)) return nothing;
+    if (!applied) return nothing;
     const summary = parseSummary<ApplySummary>(applied.summary);
     const downloadable = canDownload(applied, this.userKey) && this.job?.id === applied.id;
+    // The x hides the message only; the report download stays available.
+    const download = downloadable
+      ? html`<uui-button
+          look="outline"
+          label=${this.localize.term('ddMapToRedirect_downloadReport')}
+          .state=${this._downloading ? 'waiting' : undefined}
+          @click=${this.#downloadReport}></uui-button>`
+      : nothing;
+    if (isBannerDismissed(applied.id)) return download;
     return html`
       ${dismissTemplate(this.localize, () => {
         dismissJob(applied.id);
-        this._applied = undefined;
+        this.requestUpdate();
       })}
       <h4>${this.localize.term('ddMapToRedirect_results')}</h4>
-      ${failureTemplate(this.localize, applied)}
-      ${downloadable
-        ? html`<uui-button
-            look="outline"
-            label=${this.localize.term('ddMapToRedirect_downloadReport')}
-            .state=${this._downloading ? 'waiting' : undefined}
-            @click=${this.#downloadReport}></uui-button>`
-        : nothing}
+      ${failureTemplate(this.localize, applied)} ${download}
       ${applied.status === 'Completed' && applied.resultKey
         ? html`<dd-map-to-redirect-import-rows .importKey=${applied.resultKey} .counts=${summary}></dd-map-to-redirect-import-rows>`
         : nothing}

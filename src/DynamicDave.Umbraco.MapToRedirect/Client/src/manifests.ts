@@ -11,7 +11,7 @@ export const manifests: Array<UmbExtensionManifest> = [
     name: 'Map to Redirect Dashboard',
     element: () => import('./map-to-redirect-dashboard.element.js'),
     weight: -12,
-    meta: { label: '#ddMapToRedirect_title', pathname: 'import-redirects' },
+    meta: { label: '#ddMapToRedirect_title', pathname: 'map-to-redirect' },
     conditions: [
       { alias: 'Umb.Condition.SectionAlias', match: 'Umb.Section.Content' },
       { alias: 'DynamicDave.MapToRedirect.Condition.Access' },
