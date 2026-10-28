@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using DynamicDave.Umbraco.MapToRedirect.Sitemaps;
+using DynamicDave.Umbraco.MapToRedirect.Sites;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +18,7 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddOptions<MapToRedirectOptions>().Configure(options => MapToRedirectOptions.Bind(builder.Config.GetSection(Constants.OptionsSection), options));
 
         builder.Services.AddScoped<SitemapReader>();
+        builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();
 
         // Redirects are followed manually (SafeHttp) so every target can be checked. Private network targets are
         // blocked unless configured, or the site runs in the Development environment. Decompression is automatic for
