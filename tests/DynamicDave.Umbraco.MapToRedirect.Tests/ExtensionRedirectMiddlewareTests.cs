@@ -205,6 +205,51 @@ public class ExtensionRedirectMiddlewareTests
         Assert.DoesNotContain(_logger.Entries, e => e.Level >= LogLevel.Warning);
     }
 
+    [Fact]
+    public async Task Concurrent_requests_on_an_expired_cache_read_the_sites_once()
+    {
+        var catalog = new SlowSiteCatalog(KlantNl);
+        var middleware = Middleware();
+        var services = new ServiceCollection()
+            .AddSingleton<ISiteCatalog>(catalog)
+            .AddSingleton<IRedirectStore>(_store)
+            .AddSingleton<IRedirectTargetUrls>(_targets)
+            .BuildServiceProvider();
+        var contexts = Enumerable.Range(0, 8).Select(_ =>
+        {
+            var context = Context();
+            context.RequestServices = services;
+            return context;
+        }).ToList();
+
+        await Task.WhenAll(contexts.Select(c => Task.Run(() => middleware.InvokeAsync(c))));
+
+        Assert.Equal(1, catalog.GetSitesCalls);
+        Assert.All(contexts, c => Assert.Equal(StatusCodes.Status301MovedPermanently, c.Response.StatusCode));
+    }
+
+    private sealed class SlowSiteCatalog(SiteInfo site) : ISiteCatalog
+    {
+        private int _getSitesCalls;
+
+        public int GetSitesCalls => Volatile.Read(ref _getSitesCalls);
+
+        public IReadOnlyList<SiteInfo> GetSites()
+        {
+            Interlocked.Increment(ref _getSitesCalls);
+            Thread.Sleep(200);
+            return [site];
+        }
+
+        public SiteInfo? GetSite(Guid rootKey) => null;
+
+        public IReadOnlyList<SitePage> GetPages(SiteInfo site, string culture) => [];
+
+        public SitePage? Resolve(SiteInfo site, string culture, IReadOnlyList<SitePage> pages, string newUrl) => null;
+
+        public bool IsPublishedPath(IReadOnlyList<SitePage> pages, string path) => false;
+    }
+
     private sealed class FakeTargetUrls : IRedirectTargetUrls
     {
         public string? Url { get; set; }

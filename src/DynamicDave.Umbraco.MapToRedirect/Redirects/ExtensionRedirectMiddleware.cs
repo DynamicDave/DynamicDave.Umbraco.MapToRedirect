@@ -29,6 +29,8 @@ public sealed class ExtensionRedirectMiddleware(
     // Replaced as a whole (a reference write), so concurrent requests never see a torn value.
     private volatile CachedSites? _sites;
 
+    private readonly Lock _refreshGate = new();
+
     public async Task InvokeAsync(HttpContext context)
     {
         var request = context.Request;
@@ -87,16 +89,24 @@ public sealed class ExtensionRedirectMiddleware(
         return services.GetRequiredService<IRedirectTargetUrls>().UrlOf(redirect.PageKey, lookup.Culture, current);
     }
 
-    // Sites change rarely; a short cache keeps extension 404s (often bots) from reading domains on every request.
+    // Sites change rarely; a short cache keeps extension 404s (often bots) from reading domains on every request. Only
+    // one request refreshes an expired cache; the others wait for it instead of all calling GetSites.
     private IReadOnlyList<SiteInfo> Sites(IServiceProvider services)
     {
-        var now = timeProvider.GetUtcNow();
-        if (_sites is { } cached && now - cached.LoadedAt < SitesCacheDuration) return cached.Sites;
+        if (Fresh(_sites) is { } cached) return cached;
 
-        var sites = services.GetRequiredService<ISiteCatalog>().GetSites();
-        _sites = new CachedSites(sites, now);
-        return sites;
+        lock (_refreshGate)
+        {
+            if (Fresh(_sites) is { } refreshed) return refreshed;
+
+            var sites = services.GetRequiredService<ISiteCatalog>().GetSites();
+            _sites = new CachedSites(sites, timeProvider.GetUtcNow());
+            return sites;
+        }
     }
+
+    private IReadOnlyList<SiteInfo>? Fresh(CachedSites? cached) =>
+        cached is not null && timeProvider.GetUtcNow() - cached.LoadedAt < SitesCacheDuration ? cached.Sites : null;
 
     private sealed record CachedSites(IReadOnlyList<SiteInfo> Sites, DateTimeOffset LoadedAt);
 }
