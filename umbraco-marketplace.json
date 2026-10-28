@@ -1,5 +1,34 @@
 {
   "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
-  "Title": "DynamicDave.Umbraco.MapToRedirect",
-  "Description": "Turns a CSV of old and new URLs into Umbraco redirects."
+  "Title": "Map To Redirect",
+  "Category": "Editor Tools",
+  "PackageType": "Package",
+  "LicenseTypes": [
+    "Free"
+  ],
+  "AuthorDetails": {
+    "Name": "'Dynamic' Dave Jonker",
+    "Description": "Umbraco developer from the Netherlands",
+    "Url": "https://github.com/dynamicdave",
+    "ImageUrl": "https://github.com/dynamicdave.png",
+    "SyncContributorsFromRepository": true
+  },
+  "Screenshots": [
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect/main/docs/screenshots/test-run.png",
+      "Caption": "A test run of every CSV row before anything changes"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect/main/docs/screenshots/results.png",
+      "Caption": "The applied redirects, downloadable as a report"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect/main/docs/screenshots/history.png",
+      "Caption": "Every import in the history, with undo"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.MapToRedirect/main/docs/screenshots/generate.png",
+      "Caption": "Generate the CSV from the old site's sitemap"
+    }
+  ]
 }
