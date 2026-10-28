@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
+using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Sitemaps;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Composing;
@@ -20,6 +22,11 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddScoped<SitemapReader>();
         builder.Services.AddScoped<PageTitleFetcher>();
         builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();
+
+        // The tables are created by MapToRedirectMigrationPlan, which Umbraco discovers by itself.
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<TempStore>();
+        builder.Services.AddSingleton<IImportHistory, ImportHistory>();
 
         // Redirects are followed manually (SafeHttp) so every target can be checked. Private network targets are
         // blocked unless configured, or the site runs in the Development environment. Decompression is automatic for
