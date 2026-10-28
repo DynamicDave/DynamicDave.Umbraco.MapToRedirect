@@ -71,6 +71,11 @@ public sealed class GenerateJob
         var results = new MatchResult[urls.Count];
         for (var i = 0; i < urls.Count; i++)
         {
+            if (i % 500 == 0)
+            {
+                ct.ThrowIfCancellationRequested();
+            }
+
             progress.Report(i, urls.Count, JobPhases.Matching);
             results[i] = matcher.Match(urls[i]);
         }
@@ -85,7 +90,7 @@ public sealed class GenerateJob
                 ct);
             foreach (var i in toFetch)
             {
-                results[i] = matcher.MatchWithTitle(urls[i], titles[urls[i]]);
+                results[i] = matcher.MatchWithTitle(urls[i], titles.TryGetValue(urls[i], out var title) ? title : null);
             }
         }
 

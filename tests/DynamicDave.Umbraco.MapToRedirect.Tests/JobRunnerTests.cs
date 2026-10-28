@@ -2,7 +2,7 @@ using DynamicDave.Umbraco.MapToRedirect.Jobs;
 using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Tests.Fakes;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Tests;
 
@@ -15,16 +15,25 @@ public class JobRunnerTests
 
     private readonly FakeKeyValueService _keyValues = new();
     private readonly ManualTimeProvider _time = new(Start);
+    private readonly ListLogger<JobRunner> _log = new();
     private readonly ServiceProvider _services;
     private readonly JobRunner _runner;
 
     public JobRunnerTests()
     {
+        // As left by the package migration (SeedJobState): the row exists with an empty value.
+        _keyValues.Values[Constants.JobStateKey] = string.Empty;
         var services = new ServiceCollection();
         services.AddScoped<ScopedMarker>();
         _services = services.BuildServiceProvider();
-        _runner = new JobRunner(_keyValues, _services.GetRequiredService<IServiceScopeFactory>(), _time, NullLogger<JobRunner>.Instance);
+        _runner = Runner();
     }
+
+    private JobRunner Runner() =>
+        new(_keyValues, _services.GetRequiredService<IServiceScopeFactory>(), _time, _log)
+        {
+            FinalWriteRetryDelays = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
+        };
 
     private sealed class ScopedMarker : IDisposable
     {
@@ -105,7 +114,7 @@ public class JobRunnerTests
     [Fact]
     public void Two_starters_on_the_same_stored_value_cannot_both_win()
     {
-        var other = new JobRunner(_keyValues, _services.GetRequiredService<IServiceScopeFactory>(), _time, NullLogger<JobRunner>.Instance);
+        var other = Runner();
         var never = (Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid?, TempKind?, string?)>>)
             ((_, _, _) => new TaskCompletionSource<(Guid?, TempKind?, string?)>().Task);
 
@@ -121,6 +130,78 @@ public class JobRunnerTests
 
         Assert.Null(_runner.TryStart(JobKind.Apply, UserKey, "Dave", never));
         Assert.Equal(JobKind.Undo, _runner.Current()!.Kind);
+    }
+
+    [Fact]
+    public void First_starters_on_a_fresh_install_cannot_both_win()
+    {
+        var other = Runner();
+        var never = (Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid?, TempKind?, string?)>>)
+            ((_, _, _) => new TaskCompletionSource<(Guid?, TempKind?, string?)>().Task);
+        JobState? otherStarted = null;
+        _keyValues.BeforeTrySet = () =>
+        {
+            _keyValues.BeforeTrySet = null;
+            otherStarted = other.TryStart(JobKind.Undo, UserKey, "Eve", never);
+        };
+
+        var started = _runner.TryStart(JobKind.Generate, UserKey, "Dave", never);
+
+        Assert.NotNull(otherStarted);
+        Assert.Null(started);
+        Assert.Equal(otherStarted.Id, _runner.Current()!.Id);
+    }
+
+    [Fact]
+    public void A_missing_state_row_is_never_written_without_compare_and_set()
+    {
+        _keyValues.Values.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => _runner.TryStart(JobKind.Generate, UserKey, "Dave", Returning()));
+        Assert.Empty(_keyValues.Values);
+    }
+
+    [Fact]
+    public async Task Final_write_is_retried_after_a_transient_failure()
+    {
+        var key = Guid.NewGuid();
+
+        var state = await RunToEnd(JobKind.Generate, (_, _, _) =>
+        {
+            _keyValues.FailingTrySets = 3;
+            return Task.FromResult<(Guid?, TempKind?, string?)>((key, TempKind.GeneratedCsv, "{}"));
+        });
+
+        Assert.Equal(JobStatus.Completed, state.Status);
+        Assert.Equal(key, state.ResultKey);
+    }
+
+    [Fact]
+    public async Task Final_write_whose_acknowledgement_was_lost_counts_as_written()
+    {
+        var state = await RunToEnd(JobKind.Generate, (_, _, _) =>
+        {
+            _keyValues.ThrowAfterNextWrite = true;
+            return Task.FromResult<(Guid?, TempKind?, string?)>((null, null, "{}"));
+        });
+
+        Assert.Equal(JobStatus.Completed, state.Status);
+        Assert.DoesNotContain(_log.Entries, e => e.Level >= LogLevel.Error || e.Message.Contains("taken over"));
+    }
+
+    [Fact]
+    public async Task Final_write_that_keeps_failing_is_logged_with_the_result_key()
+    {
+        var key = Guid.NewGuid();
+
+        var state = await RunToEnd(JobKind.Generate, (_, _, _) =>
+        {
+            _keyValues.FailingTrySets = 4;
+            return Task.FromResult<(Guid?, TempKind?, string?)>((key, TempKind.GeneratedCsv, "{}"));
+        });
+
+        Assert.Equal(JobStatus.Running, state.Status);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains(key.ToString()) && e.Message.Contains("Completed"));
     }
 
     [Fact]
@@ -155,7 +236,8 @@ public class JobRunnerTests
         var state = await RunToEnd(JobKind.Undo, (_, _, _) => throw new InvalidOperationException("Database gone"));
 
         Assert.Equal(JobStatus.Failed, state.Status);
-        Assert.Equal("Database gone", state.Error);
+        Assert.Equal(JobRunner.UnexpectedError, state.Error);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("failed"));
         Assert.Null(state.ResultKey);
         Assert.Equal(Start.UtcDateTime, state.CompletedUtc);
     }

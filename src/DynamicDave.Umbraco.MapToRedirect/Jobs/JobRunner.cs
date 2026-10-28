@@ -19,7 +19,14 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
     /// <summary>A running job refreshes its heartbeat at least this often, even without progress.</summary>
     internal static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
 
-    private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
+    /// <summary><see cref="JobState.Error"/> of a job that failed with an unexpected exception (details are in the log).</summary>
+    public const string UnexpectedError = "Unexpected";
+
+    /// <summary>Waits between the attempts of a job's final state write (one attempt plus one retry per delay).</summary>
+    internal TimeSpan[] FinalWriteRetryDelays { get; init; } =
+        [TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000)];
+
+    private static readonly JsonSerializerOptions Json =new() { Converters = { new JsonStringEnumConverter() } };
 
     private readonly IKeyValueService _keyValues = keyValues;
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
@@ -49,11 +56,14 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
     {
         ArgumentNullException.ThrowIfNull(work);
 
-        // The lock covers double starts within this process (also on a fresh install, where there is no row to
-        // compare against yet); compare-and-set on the raw stored value covers other servers.
+        // Every claim is a compare-and-set on the raw stored value, which covers other servers; the package migration
+        // (SeedJobState) creates the row, so there is always a value to compare against. The lock only spares this
+        // process a database round trip for a double click.
         lock (_startGate)
         {
-            var raw = _keyValues.GetValue(Constants.JobStateKey);
+            var raw = _keyValues.GetValue(Constants.JobStateKey)
+                ?? throw new InvalidOperationException(
+                    $"The job state row '{Constants.JobStateKey}' is missing; run the {Constants.PackageName} package migration.");
             var now = Now();
             var current = Deserialize(raw);
             if (current is { Status: JobStatus.Running } && !IsStale(current, now))
@@ -63,11 +73,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
 
             var state = new JobState(Guid.NewGuid(), kind, JobStatus.Running, userKey, userName, now, now, null, 0, 0, string.Empty, null, null, null, null);
             var json = Serialize(state);
-            if (raw is null)
-            {
-                _keyValues.SetValue(Constants.JobStateKey, json);
-            }
-            else if (!_keyValues.TrySetValue(Constants.JobStateKey, raw, json))
+            if (!_keyValues.TrySetValue(Constants.JobStateKey, raw, json))
             {
                 return null;
             }
@@ -119,11 +125,14 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
         private string _raw = startedRaw;
         private bool _closed;
 
+        // The last write that threw: it may have committed anyway.
+        private (JobState State, string Json)? _unconfirmed;
+
         public async Task ExecuteAsync(
             Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid? ResultKey, TempKind? ResultKind, string? Summary)>> work)
         {
             var progress = new JobProgress(runner._timeProvider, (done, total, phase) =>
-                Write(s => s with { Done = done, Total = total, Phase = phase, HeartbeatUtc = runner.Now() }, final: false));
+                Write(s => s with { Done = done, Total = total, Phase = phase, HeartbeatUtc = runner.Now() }, close: false));
 
             // Taken before Write, never inside it: Report and Beat hold the progress lock while they call Write.
             Func<JobState, JobState> Ended(JobStatus status, Func<JobState, JobState> result)
@@ -138,62 +147,106 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
 
             using (runner._timeProvider.CreateTimer(_ => progress.Beat(), null, HeartbeatInterval, HeartbeatInterval))
             {
+                Func<JobState, JobState> final;
                 try
                 {
                     await using var scope = runner._scopeFactory.CreateAsyncScope();
                     var (key, kind, summary) = await work(scope.ServiceProvider, progress, _cancel.Token);
-                    Write(Ended(JobStatus.Completed, s => s with { ResultKey = key, ResultKind = kind, Summary = summary }), final: true);
+                    final = Ended(JobStatus.Completed, s => s with { ResultKey = key, ResultKind = kind, Summary = summary });
                 }
                 catch (JobFailedException ex)
                 {
-                    Write(Ended(JobStatus.Failed, s => s with { Error = ex.Error, Summary = ex.Summary }), final: true);
+                    final = Ended(JobStatus.Failed, s => s with { Error = ex.Error, Summary = ex.Summary });
                 }
                 catch (Exception ex)
                 {
                     runner._logger.LogError(ex, "Map to redirect {Kind} job {JobId} failed", _started.Kind, _started.Id);
-                    Write(Ended(JobStatus.Failed, s => s with { Error = ex.Message }), final: true);
+                    final = Ended(JobStatus.Failed, s => s with { Error = UnexpectedError });
                 }
+
+                await WriteFinalAsync(final);
             }
 
             // The token source is not disposed: a heartbeat that is still running may cancel it after the job ended.
         }
 
-        private void Write(Func<JobState, JobState> change, bool final)
+        /// <summary>
+        /// Writes the final state, retrying after a failed write (the heartbeat keeps the job alive meanwhile), so a
+        /// transient database error does not turn a finished job into an aborted one.
+        /// </summary>
+        private async Task WriteFinalAsync(Func<JobState, JobState> final)
         {
-            var lost = false;
-            lock (_gate)
+            var delays = runner.FinalWriteRetryDelays;
+            for (var attempt = 0; ; attempt++)
             {
-                if (_closed)
+                if (Write(final, close: true) != WriteResult.Failed)
                 {
                     return;
                 }
 
-                var next = change(_state);
-                var json = Serialize(next);
-                try
+                if (attempt >= delays.Length)
                 {
-                    if (runner._keyValues.TrySetValue(Constants.JobStateKey, _raw, json))
-                    {
-                        _state = next;
-                        _raw = json;
-                    }
-                    else
-                    {
-                        lost = true;
-                        _closed = true;
-                        runner._logger.LogWarning("Map to redirect {Kind} job {JobId} was taken over by another job; it stops", _started.Kind, _started.Id);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // A failed progress write must not fail the job; the next write or the heartbeat tries again.
-                    runner._logger.LogWarning(ex, "Could not save the state of map to redirect {Kind} job {JobId}", _started.Kind, _started.Id);
+                    break;
                 }
 
-                _closed |= final;
+                await Task.Delay(delays[attempt], runner._timeProvider);
             }
 
-            if (lost && !final)
+            JobState unsaved;
+            lock (_gate)
+            {
+                _closed = true;
+                unsaved = final(_state);
+            }
+
+            runner._logger.LogError(
+                "Could not save the final state of map to redirect {Kind} job {JobId}: {Status}, result {ResultKey} ({ResultKind}), error {Error}",
+                _started.Kind, _started.Id, unsaved.Status, unsaved.ResultKey, unsaved.ResultKind, unsaved.Error);
+        }
+
+        private WriteResult Write(Func<JobState, JobState> change, bool close)
+        {
+            WriteResult result;
+            lock (_gate)
+            {
+                if (_closed)
+                {
+                    return WriteResult.Closed;
+                }
+
+                var next = change(_state);
+                var json = Serialize(next);
+                result = TrySet(json);
+
+                // A write that threw after it committed makes the next compare-and-set fail against our own value.
+                if (result == WriteResult.Lost && _unconfirmed is { } unconfirmed && SafeRead() == unconfirmed.Json)
+                {
+                    _state = unconfirmed.State;
+                    _raw = unconfirmed.Json;
+                    next = change(_state);
+                    json = Serialize(next);
+                    result = TrySet(json);
+                }
+
+                switch (result)
+                {
+                    case WriteResult.Written:
+                        _state = next;
+                        _raw = json;
+                        _unconfirmed = null;
+                        _closed = close;
+                        break;
+                    case WriteResult.Failed:
+                        _unconfirmed = (next, json);
+                        break;
+                    case WriteResult.Lost:
+                        _closed = true;
+                        runner._logger.LogWarning("Map to redirect {Kind} job {JobId} was taken over by another job; it stops", _started.Kind, _started.Id);
+                        break;
+                }
+            }
+
+            if (result == WriteResult.Lost)
             {
                 try
                 {
@@ -205,7 +258,43 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
                     runner._logger.LogWarning(ex, "Cancelling map to redirect {Kind} job {JobId} failed", _started.Kind, _started.Id);
                 }
             }
+
+            return result;
         }
+
+        private WriteResult TrySet(string json)
+        {
+            try
+            {
+                return runner._keyValues.TrySetValue(Constants.JobStateKey, _raw, json) ? WriteResult.Written : WriteResult.Lost;
+            }
+            catch (Exception ex)
+            {
+                // A failed progress write must not fail the job; the next write or the heartbeat tries again.
+                runner._logger.LogWarning(ex, "Could not save the state of map to redirect {Kind} job {JobId}", _started.Kind, _started.Id);
+                return WriteResult.Failed;
+            }
+        }
+
+        private string? SafeRead()
+        {
+            try
+            {
+                return runner._keyValues.GetValue(Constants.JobStateKey);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+    }
+
+    private enum WriteResult
+    {
+        Written,
+        Lost,
+        Failed,
+        Closed,
     }
 }
 
