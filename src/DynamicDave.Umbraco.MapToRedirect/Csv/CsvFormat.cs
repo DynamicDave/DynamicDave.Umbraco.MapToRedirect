@@ -9,6 +9,7 @@ public record CsvReadResult(IReadOnlyList<CsvRow> Rows, CsvReadError? Error);
 /// <summary>Reads uploaded redirect CSVs and writes generated/report CSVs (RFC 4180).</summary>
 public static class CsvFormat
 {
+    private const int MaxFieldsPerRecord = 50;
     private static readonly char[] Delimiters = [',', ';', '\t'];
     private static readonly string[] OldHeaders = ["old url", "oude url"];
     private static readonly string[] NewHeaders = ["new url", "nieuwe url"];
@@ -35,9 +36,15 @@ public static class CsvFormat
                 }
             }
 
-            text = new UTF8Encoding(false, true).GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+            var decoded = Decode(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+            if (decoded is null)
+            {
+                return Fail(CsvReadError.Unreadable);
+            }
+
+            text = decoded;
         }
-        catch (Exception ex) when (ex is DecoderFallbackException or IOException or NotSupportedException or ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or NotSupportedException or ObjectDisposedException)
         {
             return Fail(CsvReadError.Unreadable);
         }
@@ -47,35 +54,28 @@ public static class CsvFormat
             text = text[1..];
         }
 
-        var records = Parse(text, DetectDelimiter(text));
-
         var oldIndex = 0;
         var newIndex = 1;
-        var first = records.FirstOrDefault(r => !r.IsBlank);
-        var skipNumber = 0;
-        if (first is not null)
-        {
-            var oldHeader = IndexOfHeader(first.Fields, OldHeaders);
-            var newHeader = IndexOfHeader(first.Fields, NewHeaders);
-            if (oldHeader >= 0 || newHeader >= 0)
-            {
-                if (oldHeader < 0 || newHeader < 0)
-                {
-                    return Fail(CsvReadError.MissingColumns);
-                }
-
-                oldIndex = oldHeader;
-                newIndex = newHeader;
-                skipNumber = first.Number;
-            }
-        }
-
+        var firstRecord = true;
         var rows = new List<CsvRow>();
-        foreach (var record in records)
+        foreach (var record in Parse(text, DetectDelimiter(text)))
         {
-            if (record.IsBlank || record.Number <= skipNumber)
+            if (firstRecord)
             {
-                continue;
+                firstRecord = false;
+                var oldHeader = IndexOfHeader(record.Fields, OldHeaders);
+                var newHeader = IndexOfHeader(record.Fields, NewHeaders);
+                if (oldHeader >= 0 || newHeader >= 0)
+                {
+                    if (oldHeader < 0 || newHeader < 0)
+                    {
+                        return Fail(CsvReadError.MissingColumns);
+                    }
+
+                    oldIndex = oldHeader;
+                    newIndex = newHeader;
+                    continue;
+                }
             }
 
             if (rows.Count >= maxRows)
@@ -123,6 +123,44 @@ public static class CsvFormat
         }
 
         builder.Append("\r\n");
+    }
+
+    /// <summary>
+    /// UTF-8 (with or without BOM) and UTF-16 (BOM required, as Excel "Unicode Text" writes it); invalid UTF-8 falls back to
+    /// Windows-1252 (Excel "CSV (puntkomma)" on Dutch Windows). Input containing NUL bytes is binary and returns null.
+    /// </summary>
+    private static string? Decode(ReadOnlySpan<byte> bytes)
+    {
+        try
+        {
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            {
+                return new UnicodeEncoding(false, false, true).GetString(bytes[2..]);
+            }
+
+            if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            {
+                return new UnicodeEncoding(true, false, true).GetString(bytes[2..]);
+            }
+
+            if (bytes.Contains((byte)0))
+            {
+                return null;
+            }
+
+            try
+            {
+                return new UTF8Encoding(false, true).GetString(bytes);
+            }
+            catch (DecoderFallbackException)
+            {
+                return CodePagesEncodingProvider.Instance.GetEncoding(1252)!.GetString(bytes);
+            }
+        }
+        catch (DecoderFallbackException)
+        {
+            return null;
+        }
     }
 
     private static CsvReadResult Fail(CsvReadError error) => new([], error);
@@ -178,27 +216,44 @@ public static class CsvFormat
         return Delimiters[best];
     }
 
-    private sealed record Record(int Number, List<string> Fields)
-    {
-        public bool IsBlank => Fields.Count == 1 && Fields[0].Length == 0;
-    }
+    private sealed record Record(int Number, List<string> Fields);
 
-    private static List<Record> Parse(string text, char delimiter)
+    /// <summary>
+    /// Lazily yields records. Records whose fields are all empty or whitespace are skipped (they still consume a record
+    /// number) and only the first <see cref="MaxFieldsPerRecord"/> fields of a record are kept.
+    /// </summary>
+    private static IEnumerable<Record> Parse(string text, char delimiter)
     {
-        var records = new List<Record>();
         var fields = new List<string>();
         var field = new StringBuilder();
         var inQuotes = false;
         var number = 1;
         var pending = false; // current record has any content or delimiter
 
-        void EndRecord()
+        void AddField()
         {
-            fields.Add(field.ToString());
-            records.Add(new Record(number++, fields));
-            fields = [];
+            if (fields.Count < MaxFieldsPerRecord)
+            {
+                fields.Add(field.ToString());
+            }
+
             field.Clear();
+        }
+
+        Record? EndRecord()
+        {
+            AddField();
+            var current = number++;
             pending = false;
+            if (fields.TrueForAll(string.IsNullOrWhiteSpace))
+            {
+                fields.Clear();
+                return null;
+            }
+
+            var record = new Record(current, fields);
+            fields = [];
+            return record;
         }
 
         for (var i = 0; i < text.Length; i++)
@@ -230,8 +285,7 @@ public static class CsvFormat
             }
             else if (c == delimiter)
             {
-                fields.Add(field.ToString());
-                field.Clear();
+                AddField();
                 pending = true;
             }
             else if (c == '\r' || c == '\n')
@@ -241,7 +295,11 @@ public static class CsvFormat
                     i++;
                 }
 
-                EndRecord();
+                var record = EndRecord();
+                if (record is not null)
+                {
+                    yield return record;
+                }
             }
             else
             {
@@ -252,9 +310,11 @@ public static class CsvFormat
 
         if (pending)
         {
-            EndRecord();
+            var record = EndRecord();
+            if (record is not null)
+            {
+                yield return record;
+            }
         }
-
-        return records;
     }
 }

@@ -89,11 +89,84 @@ public class CsvFormatTests
     }
 
     [Fact]
-    public void Invalid_utf8_is_unreadable()
+    public void Binary_input_with_nul_bytes_is_unreadable()
     {
-        var result = CsvFormat.Read(new MemoryStream([0xFF, 0xFE, 0xC3, 0x28]));
+        var result = CsvFormat.Read(new MemoryStream([0x41, 0x00, 0x42, 0x00, 0x01]));
 
         Assert.Equal(CsvReadError.Unreadable, result.Error);
+    }
+
+    [Fact]
+    public void Reads_windows_1252_export()
+    {
+        var bytes = new List<byte>(Encoding.ASCII.GetBytes("Old URL;New URL\r\n/caf"));
+        bytes.Add(0xE9); // e acute
+        bytes.AddRange(Encoding.ASCII.GetBytes(";/prijs-"));
+        bytes.Add(0x80); // euro sign
+        bytes.AddRange(Encoding.ASCII.GetBytes("\r\n"));
+
+        var result = CsvFormat.Read(new MemoryStream(bytes.ToArray()));
+
+        Assert.Null(result.Error);
+        Assert.Equal([new CsvRow(2, "/café", "/prijs-€")], result.Rows);
+    }
+
+    [Fact]
+    public void Reads_utf16_le_with_bom()
+    {
+        var text = "Old URL\tNew URL\r\n/café\t/b\r\n";
+        var bytes = new byte[] { 0xFF, 0xFE }.Concat(Encoding.Unicode.GetBytes(text)).ToArray();
+
+        var result = CsvFormat.Read(new MemoryStream(bytes));
+
+        Assert.Null(result.Error);
+        Assert.Equal([new CsvRow(2, "/café", "/b")], result.Rows);
+    }
+
+    [Fact]
+    public void Reads_utf16_be_with_bom()
+    {
+        var bytes = new byte[] { 0xFE, 0xFF }.Concat(Encoding.BigEndianUnicode.GetBytes("/a;/b")).ToArray();
+
+        var result = CsvFormat.Read(new MemoryStream(bytes));
+
+        Assert.Equal([new CsvRow(1, "/a", "/b")], result.Rows);
+    }
+
+    [Fact]
+    public void Blank_line_flood_is_cheap_and_yields_no_rows()
+    {
+        var result = Read(new string('\n', 10_000_000));
+
+        Assert.Null(result.Error);
+        Assert.Empty(result.Rows);
+    }
+
+    [Fact]
+    public void Single_column_flood_is_too_many_rows()
+    {
+        var result = Read(string.Concat(Enumerable.Repeat("a\n", 5_000_000)));
+
+        Assert.Equal(CsvReadError.TooManyRows, result.Error);
+        Assert.Empty(result.Rows);
+    }
+
+    [Fact]
+    public void Header_with_very_many_delimiters_still_works()
+    {
+        var result = Read("Old URL,New URL" + new string(',', 1_000_000) + "\n/a,/b");
+
+        Assert.Null(result.Error);
+        Assert.Equal([new CsvRow(2, "/a", "/b")], result.Rows);
+    }
+
+    [Fact]
+    public void Empty_rows_are_skipped_and_not_counted_toward_the_limit()
+    {
+        var result = Read("Old URL;New URL\n/a;/b\n;;\n  ; \n/c;/d\n;;", maxRows: 2);
+
+        Assert.Null(result.Error);
+        Assert.Equal([new CsvRow(2, "/a", "/b"), new CsvRow(5, "/c", "/d")], result.Rows);
     }
 
     [Fact]
