@@ -1,6 +1,7 @@
 export default {
   ddMapToRedirect: {
     title: 'Weiterleitungen importieren',
+    dismiss: 'Schließen',
     site: 'Website',
     language: 'Sprache',
     noSites: 'Es gibt keine Websites mit einer Domain, für die Weiterleitungen importiert werden können.',

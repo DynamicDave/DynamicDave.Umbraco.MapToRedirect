@@ -139,16 +139,21 @@ public class MapToRedirectController(
         }));
     }
 
-    /// <summary>The current or last job; 204 when there has been none.</summary>
+    /// <summary>
+    /// The running job, or the current user's own finished job for an hour after it ended; 204 otherwise (also when there
+    /// has been none).
+    /// </summary>
     [HttpGet("job")]
     [ProducesResponseType<JobStateModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public IActionResult GetJob()
     {
-        if (!HasAccess(out _)) return Forbidden();
+        if (!HasAccess(out var user)) return Forbidden();
 
-        return jobs.Current() is { } state ? Ok(ApiMapping.ToModel(state)) : NoContent();
+        return jobs.Current() is { } state && ApiMapping.IsJobVisible(state, user.Key, timeProvider.GetUtcNow().UtcDateTime)
+            ? Ok(ApiMapping.ToModel(state))
+            : NoContent();
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 export default {
   ddMapToRedirect: {
     title: 'Importer des redirections',
+    dismiss: 'Fermer',
     site: 'Site',
     language: 'Langue',
     noSites: 'Aucun site avec un domaine pour lequel importer des redirections.',

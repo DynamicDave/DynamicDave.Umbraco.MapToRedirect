@@ -9,6 +9,9 @@ import {
   IMPORTS_CHANGED_EVENT,
   PAGE_SIZE,
   canDownload,
+  dismissJob,
+  dismissTemplate,
+  isBannerDismissed,
   errorCode,
   errorTerm,
   failureTemplate,
@@ -287,10 +290,14 @@ export class DdMapToRedirectUploadTabElement extends UmbLitElement {
     const job = this.job;
     if (job?.kind === 'Apply' && job.status === 'Running' && job.id === this.#watching) return progressTemplate(this.localize, job);
     const applied = this._applied;
-    if (!applied) return nothing;
+    if (!applied || isBannerDismissed(applied.id)) return nothing;
     const summary = parseSummary<ApplySummary>(applied.summary);
     const downloadable = canDownload(applied, this.userKey) && this.job?.id === applied.id;
     return html`
+      ${dismissTemplate(this.localize, () => {
+        dismissJob(applied.id);
+        this._applied = undefined;
+      })}
       <h4>${this.localize.term('ddMapToRedirect_results')}</h4>
       ${failureTemplate(this.localize, applied)}
       ${downloadable

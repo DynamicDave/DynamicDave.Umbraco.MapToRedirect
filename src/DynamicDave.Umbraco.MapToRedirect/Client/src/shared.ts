@@ -183,6 +183,9 @@ export function failureTemplate(localize: UmbLocalizationController, job: JobSta
 }
 
 export const sharedStyles = css`
+  .dismiss {
+    float: right;
+  }
   :host {
     display: block;
   }
@@ -273,4 +276,44 @@ const ROW_MESSAGE_CODES = new Set([
 export function rowMessage(localize: UmbLocalizationController, row: { message?: string | null; messageCode?: string | null }) {
   const code = row.messageCode;
   return code && ROW_MESSAGE_CODES.has(code) ? localize.term(`ddMapToRedirect_rowMessage${code}`) : (row.message ?? '');
+}
+
+const DISMISSED_KEY = 'ddMapToRedirect.dismissedJobs';
+const MAX_DISMISSED = 50;
+
+function dismissedJobs(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return []; // no storage: banners come back after a reload
+  }
+}
+
+/** Dismissed finished jobs are remembered per viewer in localStorage (a convenience: it works without storage). */
+export const isJobDismissed = (id: string) => dismissedJobs().includes(id);
+
+const sessionDismissed = new Set<string>();
+
+export function dismissJob(id: string) {
+  sessionDismissed.add(id);
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedJobs().filter((d) => d !== id), id].slice(-MAX_DISMISSED)));
+  } catch {
+    // ignore: the session set still hides it until reload
+  }
+}
+
+/** Whether the banner of this finished job was dismissed (this session or earlier). */
+export const isBannerDismissed = (id: string) => sessionDismissed.has(id) || isJobDismissed(id);
+
+/** The × of a finished job's banner. */
+export function dismissTemplate(localize: UmbLocalizationController, onDismiss: () => void) {
+  return html`<uui-button
+    class="dismiss"
+    look="placeholder"
+    compact
+    label=${localize.term('ddMapToRedirect_dismiss')}
+    aria-label=${localize.term('ddMapToRedirect_dismiss')}
+    @click=${onDismiss}>×</uui-button>`;
 }

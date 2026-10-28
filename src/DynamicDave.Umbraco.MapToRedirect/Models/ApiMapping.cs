@@ -111,6 +111,20 @@ public static class ApiMapping
         Undone = row.Undone,
     };
 
+    /// <summary>
+    /// Whether the current user may see the job state: a running job is visible to everyone (it blocks everyone); a
+    /// finished job only to the user who started it and for <see cref="TempStore.TimeToLive"/> after it ended (an aborted
+    /// job has no completion time, so its heartbeat counts).
+    /// </summary>
+    public static bool IsJobVisible(JobState state, Guid userKey, DateTime nowUtc)
+    {
+        if (state.Status == JobStatus.Running) return true;
+        if (state.UserKey != userKey) return false;
+
+        var ended = state.CompletedUtc ?? state.HeartbeatUtc;
+        return nowUtc - ended < TempStore.TimeToLive;
+    }
+
     public static JobStateModel ToModel(JobState state) => new()
     {
         Id = state.Id,

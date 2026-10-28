@@ -1,6 +1,7 @@
 export default {
   ddMapToRedirect: {
     title: 'Redirects importeren',
+    dismiss: 'Sluiten',
     site: 'Site',
     language: 'Taal',
     noSites: 'Er zijn geen sites met een domein om redirects voor te importeren.',

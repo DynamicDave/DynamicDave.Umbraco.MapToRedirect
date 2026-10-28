@@ -11,6 +11,9 @@ import {
   failureTemplate,
   fileNameFrom,
   isJob,
+  dismissJob,
+  dismissTemplate,
+  isBannerDismissed,
   jobChanged,
   matchKindTerm,
   parseSummary,
@@ -142,8 +145,13 @@ export class DdMapToRedirectGenerateTabElement extends UmbLitElement {
 
   #renderJob(job: JobStateModel) {
     if (job.status === 'Running') return progressTemplate(this.localize, job);
+    if (isBannerDismissed(job.id)) return nothing;
     const summary = parseSummary<GenerateSummary>(job.summary);
     return html`
+      ${dismissTemplate(this.localize, () => {
+        dismissJob(job.id);
+        this.requestUpdate();
+      })}
       ${failureTemplate(this.localize, job)}
       ${job.status === 'Completed' && summary
         ? html`<p>${this.localize.term('ddMapToRedirect_generateSummary', summary.urls)}</p>

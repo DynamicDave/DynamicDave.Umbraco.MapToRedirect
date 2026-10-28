@@ -11,7 +11,10 @@ import {
   applyOutcomeTerm,
   errorCode,
   errorTerm,
+  dismissJob,
+  dismissTemplate,
   failureTemplate,
+  isBannerDismissed,
   isJob,
   jobChanged,
   parseSummary,
@@ -279,9 +282,13 @@ export class DdMapToRedirectHistoryTabElement extends UmbLitElement {
     const job = this.job;
     if (job?.kind === 'Undo' && job.status === 'Running' && job.id === this.#watching) return progressTemplate(this.localize, job);
     const undone = this._undone;
-    if (!undone) return nothing;
+    if (!undone || isBannerDismissed(undone.id)) return nothing;
     const summary = parseSummary<UndoSummary>(undone.summary);
     return html`
+      ${dismissTemplate(this.localize, () => {
+        dismissJob(undone.id);
+        this._undone = undefined;
+      })}
       ${failureTemplate(this.localize, undone)}
       ${undone.status === 'Completed' && summary
         ? html`<p><uui-tag color="positive" look="secondary">${this.localize.term('ddMapToRedirect_undoSummary', summary.removed, summary.restored, summary.leftAlone)}</uui-tag></p>`

@@ -1,6 +1,7 @@
 export default {
   ddMapToRedirect: {
     title: 'Importér omdirigeringer',
+    dismiss: 'Luk',
     site: 'Website',
     language: 'Sprog',
     noSites: 'Der er ingen websites med et domæne at importere omdirigeringer til.',
