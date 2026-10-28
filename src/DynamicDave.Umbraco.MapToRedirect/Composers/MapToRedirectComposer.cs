@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using DynamicDave.Umbraco.MapToRedirect.Applying;
+using DynamicDave.Umbraco.MapToRedirect.Jobs;
 using DynamicDave.Umbraco.MapToRedirect.Persistence;
 using DynamicDave.Umbraco.MapToRedirect.Planning;
 using DynamicDave.Umbraco.MapToRedirect.Redirects;
@@ -29,11 +30,15 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddScoped<RedirectPlanner>();
         builder.Services.AddScoped<RedirectApplier>();
         builder.Services.AddScoped<ImportUndoer>();
+        builder.Services.AddScoped<GenerateJob>();
 
         // The tables are created by MapToRedirectMigrationPlan, which Umbraco discovers by itself.
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<TempStore>();
         builder.Services.AddSingleton<IImportHistory, ImportHistory>();
+
+        // One job at a time per installation; each job runs in its own DI scope (see JobRunner).
+        builder.Services.AddSingleton<JobRunner>();
 
         // Redirects are followed manually (SafeHttp) so every target can be checked. Private network targets are
         // blocked unless configured, or the site runs in the Development environment. Decompression is automatic for
