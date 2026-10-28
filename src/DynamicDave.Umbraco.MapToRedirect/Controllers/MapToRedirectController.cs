@@ -34,8 +34,6 @@ public class MapToRedirectController(
 {
     private const string CsvContentType = "text/csv; charset=utf-8";
 
-    private const long UploadRequestLimit = 11_000_000;
-
     [HttpGet("access")]
     [ProducesResponseType<AccessResponse>(StatusCodes.Status200OK)]
     public IActionResult GetAccess() => Ok(new AccessResponse { HasAccess = accessPolicy.HasAccess(CurrentUser()) });
@@ -72,10 +70,6 @@ public class MapToRedirectController(
 
     [HttpPost("plans")]
     [Consumes("multipart/form-data")]
-    // Above the 10 MB CSV limit (plus multipart overhead), so a larger file reaches CsvFormat and gets TooLarge instead
-    // of the server's default request limit (Kestrel 30 MB, multipart 128 MB, or a smaller limit of the host).
-    [RequestSizeLimit(UploadRequestLimit)]
-    [RequestFormLimits(MultipartBodyLengthLimit = UploadRequestLimit)]
     [ProducesResponseType<PlanResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
