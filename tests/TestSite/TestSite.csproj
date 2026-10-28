@@ -59,14 +59,17 @@
     <RazorCompileOnPublish>false</RazorCompileOnPublish>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- SixLabors.ImageSharp 3.1.12 via Umbraco.Cms.Imaging.ImageSharp. All published 2026-10-07 and only fixed in
-         ImageSharp 4.1.2; Umbraco 17.7.1 and 18.2.1 still ship 3.1.12. -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" /> <!-- medium: ICC CLUT allocation -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" /> <!-- medium: BigTIFF IFD loop -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" /> <!-- high: HistogramEqualization index -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" /> <!-- high: TIFF CCITT T4 encoder overflow -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" /> <!-- high: TIFF CCITT T6 encoder overflow -->
-  </ItemGroup>
+  <!-- CI vulnerability check: restore with -p:FailOnVulnerablePackages=true fails on any known advisory in the
+       TestSite's full dependency graph (the package installed on Umbraco, like a real site). Only this project turns
+       the audit warnings into errors; the package project keeps auditing its direct dependencies only. -->
+  <PropertyGroup>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(FailOnVulnerablePackages)' == 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Advisories accepted for the check go here as NuGetAuditSuppress items, only for Umbraco's own dependencies that
+       cannot be pinned to a patched version in Directory.Packages.props. None at the moment. -->
 
 </Project>
