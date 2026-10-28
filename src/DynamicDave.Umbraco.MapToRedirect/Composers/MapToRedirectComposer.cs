@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 using DynamicDave.Umbraco.MapToRedirect.Persistence;
+using DynamicDave.Umbraco.MapToRedirect.Planning;
+using DynamicDave.Umbraco.MapToRedirect.Redirects;
 using DynamicDave.Umbraco.MapToRedirect.Sitemaps;
 using DynamicDave.Umbraco.MapToRedirect.Sites;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +24,8 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddScoped<SitemapReader>();
         builder.Services.AddScoped<PageTitleFetcher>();
         builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();
+        builder.Services.AddScoped<IRedirectStore, UmbracoRedirectStore>();
+        builder.Services.AddScoped<RedirectPlanner>();
 
         // The tables are created by MapToRedirectMigrationPlan, which Umbraco discovers by itself.
         builder.Services.TryAddSingleton(TimeProvider.System);
