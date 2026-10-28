@@ -1,5 +1,23 @@
 export const manifests: Array<UmbExtensionManifest> = [
   {
+    type: 'condition',
+    alias: 'DynamicDave.MapToRedirect.Condition.Access',
+    name: 'Map To Redirect Access Condition',
+    api: () => import('./access.condition.js'),
+  },
+  {
+    type: 'dashboard',
+    alias: 'DynamicDave.MapToRedirect.Dashboard',
+    name: 'Import Redirects Dashboard',
+    element: () => import('./map-to-redirect-dashboard.element.js'),
+    weight: -12,
+    meta: { label: '#ddMapToRedirect_title', pathname: 'import-redirects' },
+    conditions: [
+      { alias: 'Umb.Condition.SectionAlias', match: 'Umb.Section.Content' },
+      { alias: 'DynamicDave.MapToRedirect.Condition.Access' },
+    ],
+  },
+  {
     type: 'localization',
     alias: 'DynamicDave.MapToRedirect.Localization.En',
     name: 'Map To Redirect English',

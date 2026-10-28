@@ -18,6 +18,8 @@ export const onInit: UmbEntryPointOnInit = async (host, _extensionRegistry) => {
     console.warn("UMB_AUTH_CONTEXT not available — extension API client will not be authenticated");
     return;
   }
+  // Registered before the backoffice's interceptors, which replace every error body that is not ProblemDetails.
+  client.interceptors.response.use(keepErrorBody);
   // configureClient() is not available in every supported Umbraco version (it is missing in 17.0).
   // Older versions fall back to the OpenAPI configuration, which provides the same baseUrl,
   // credentials and token, without the default response interceptors.
@@ -32,6 +34,28 @@ export const onInit: UmbEntryPointOnInit = async (host, _extensionRegistry) => {
     });
   }
 };
+
+/**
+ * The dashboard needs the API's 400/409 bodies ({ error: "code" } or the running job). The backoffice's error
+ * interceptor keeps a body only when it looks like ProblemDetails, so wrap ours in the ProblemDetails fields.
+ */
+async function keepErrorBody(response: Response): Promise<Response> {
+  if (response.status !== 400 && response.status !== 409) return response;
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return response; // empty or not JSON
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body) || "type" in body) return response;
+  // The body comes last: a 409's JobStateModel keeps its own "status" (Running), which the dashboard reads.
+  const wrapped = { type: "DynamicDave.MapToRedirect", title: response.statusText || `HTTP ${response.status}`, status: response.status, ...body };
+  return new Response(JSON.stringify(wrapped), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 export const onUnload: UmbEntryPointOnUnload = (_host, _extensionRegistry) => {
 };
