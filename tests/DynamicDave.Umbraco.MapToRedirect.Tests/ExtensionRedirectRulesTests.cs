@@ -12,7 +12,20 @@ public class ExtensionRedirectRulesTests
     private static readonly SiteInfo Prefixed = new(
         Guid.NewGuid(), 1061, "Prefixed", ["klant.nl"], ["en-US", "nl-NL"],
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"], ["nl-NL"] = ["klant.nl"] },
-        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["/en"], ["nl-NL"] = ["/nl"] });
+        new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["en-US"] = [new("klant.nl", "/en")],
+            ["nl-NL"] = [new("klant.nl", "/nl")],
+        });
+
+    // en-US on klant.com/en and on an old domain without a prefix (old-en.com).
+    private static readonly SiteInfo Mixed = new(
+        Guid.NewGuid(), 1062, "Mixed", ["klant.com", "old-en.com"], ["en-US"],
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.com", "old-en.com"] },
+        new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["en-US"] = [new("klant.com", "/en"), new("old-en.com", "")],
+        });
 
     private static readonly SiteInfo NoDomains = new(
         Guid.NewGuid(), 1070, "No domains", [], ["en-US"], new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
@@ -143,6 +156,23 @@ public class ExtensionRedirectRulesTests
         var site = Sites.Single(s => s.RootId == int.Parse(expectedRoute.Split('/')[0]));
         Assert.Equal(RedirectRoute.For(site, culture, Urls.UrlNormalizer.RoutePath(requestPath)!), lookup.Route);
     }
+
+    // The prefix of the domain that matched is removed: not the prefix of another domain of the same culture.
+    [Theory]
+    [InlineData("old-en.com", "/x.html", "1062/x.html")]
+    [InlineData("old-en.com", "/en/x.html", "1062/en/x.html")]
+    [InlineData("klant.com", "/en/x.html", "1062/x.html")]
+    public void Prefixed_and_unprefixed_domains_of_one_culture_each_route_by_their_own_prefix(string host, string requestPath, string expectedRoute)
+    {
+        var lookup = ExtensionRedirectRules.Lookup([Mixed], host, requestPath);
+
+        Assert.NotNull(lookup);
+        Assert.Equal((expectedRoute, "en-US"), (lookup.Route, lookup.Culture));
+    }
+
+    [Fact]
+    public void Prefixed_domain_of_a_mixed_culture_does_not_serve_paths_outside_its_prefix() =>
+        Assert.Null(ExtensionRedirectRules.Lookup([Mixed], "klant.com", "/x.html"));
 
     [Fact]
     public void Lookup_for_an_unknown_host_is_null() =>

@@ -44,11 +44,14 @@ public sealed class RedirectPlanner(IRedirectStore store)
         var oldPath = UrlNormalizer.RoutePath(row.OldUrl);
         if (oldPath is null) return result;
 
+        // Null when every domain of the culture has a path prefix and the old path is under none of them: no request in
+        // the culture reaches that path, so a redirect for it would never fire.
         result = result with { OldPath = oldPath, Route = RedirectRoute.For(site, culture, oldPath) };
+        if (result.Route is null) return Outcome(result, PlanOutcome.Error, PlanReason.OutsideLanguagePath);
 
-        // The first row of a route wins, whatever its outcome. Different old paths can share a route ("/en/x" and "/x" on
-        // a domain with path prefix "/en").
-        if (!seen.Add(result.Route!)) return Outcome(result, PlanOutcome.Skip, PlanReason.Duplicate);
+        // The first row of a route wins, whatever its outcome. Different old paths can share a route ("/en/x" and
+        // "/english/x" on domains with path prefixes "/en" and "/english").
+        if (!seen.Add(result.Route)) return Outcome(result, PlanOutcome.Skip, PlanReason.Duplicate);
 
         var newUrl = row.NewUrl.Trim();
         if (newUrl.Length == 0) return Outcome(result, PlanOutcome.Skip, PlanReason.EmptyNewUrl);

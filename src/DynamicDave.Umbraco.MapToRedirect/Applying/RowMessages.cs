@@ -29,6 +29,7 @@ public static class RowMessages
         [nameof(PlanReason.InvalidNewUrl)] = "The new URL is not valid.",
         [nameof(PlanReason.NotPublished)] = "The new URL is not a published page of the site.",
         [nameof(PlanReason.OtherSite)] = "The new URL belongs to another site or language.",
+        [nameof(PlanReason.OutsideLanguagePath)] = "The old URL is outside the language path of the selected language.",
         [Skipped] = "Skipped.",
         [Error] = "Error.",
         [SiteRemoved] = "The site no longer exists.",

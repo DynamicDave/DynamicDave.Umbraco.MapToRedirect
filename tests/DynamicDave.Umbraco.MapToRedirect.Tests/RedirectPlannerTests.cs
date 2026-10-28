@@ -156,7 +156,7 @@ public class RedirectPlannerTests
         var site = new SiteInfo(
             Guid.NewGuid(), 1061, "Home", ["klant.nl"], ["en-US"],
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"] },
-            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["/en"] });
+            new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = [new("klant.nl", "/en")] });
 
         var rows = new RedirectPlanner(_store).Plan(
             Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old-about", "/en/about"), new CsvRow(3, "/en/about", "/en")], site, "en-US", pages).Rows;
@@ -166,16 +166,56 @@ public class RedirectPlannerTests
     }
 
     [Fact]
+    public void Old_url_outside_every_path_prefix_of_the_culture_is_an_error()
+    {
+        IReadOnlyList<SitePage> pages = [new(Guid.NewGuid(), "/en/about", "about", "About", null)];
+        var site = new SiteInfo(
+            Guid.NewGuid(), 1061, "Home", ["klant.nl"], ["en-US"],
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"] },
+            new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = [new("klant.nl", "/en")] });
+
+        var row = Assert.Single(new RedirectPlanner(_store).Plan(
+            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/about", "/en/about")], site, "en-US", pages).Rows);
+
+        Assert.Equal((PlanOutcome.Error, PlanReason.OutsideLanguagePath, "/about", (string?)null), (row.Outcome, row.Reason, row.OldPath, row.Route));
+    }
+
+    // A domain without a prefix (old-en.com) serves every path of the culture: the route keeps the full path.
+    [Fact]
+    public void Culture_with_a_domain_without_prefix_keeps_the_full_path_in_the_route()
+    {
+        IReadOnlyList<SitePage> pages = [new(Guid.NewGuid(), "/en/about", "about", "About", null)];
+        var site = new SiteInfo(
+            Guid.NewGuid(), 1062, "Home", ["klant.nl", "old-en.com"], ["en-US"],
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl", "old-en.com"] },
+            new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["en-US"] = [new("klant.nl", "/en"), new("old-en.com", "")],
+            });
+
+        var rows = new RedirectPlanner(_store).Plan(
+            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old", "/en/about"), new CsvRow(3, "/old.html", "/en/about"), new CsvRow(4, "/en/about", "/en/about")],
+            site, "en-US", pages).Rows;
+
+        Assert.Equal((PlanOutcome.Add, "1062/en/old"), (rows[0].Outcome, rows[0].Route));
+        Assert.Equal((PlanOutcome.Add, "1062/old.html"), (rows[1].Outcome, rows[1].Route));
+        Assert.Equal((PlanOutcome.Skip, PlanReason.PageExistsAtPath), (rows[2].Outcome, rows[2].Reason));
+    }
+
+    [Fact]
     public void Old_urls_with_the_same_route_are_duplicates()
     {
         IReadOnlyList<SitePage> pages = [new(Guid.NewGuid(), "/en/about", "about", "About", null), new(Guid.NewGuid(), "/en/contact", "contact", "Contact", null)];
         var site = new SiteInfo(
             Guid.NewGuid(), 1061, "Home", ["klant.nl"], ["en-US"],
-            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl"] },
-            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["/en"] });
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { ["en-US"] = ["klant.nl", "klant.com"] },
+            new Dictionary<string, IReadOnlyList<CultureDomain>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["en-US"] = [new("klant.nl", "/en"), new("klant.com", "/english")],
+            });
 
         var rows = new RedirectPlanner(_store).Plan(
-            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old", "/en/about"), new CsvRow(3, "/old", "/en/contact")], site, "en-US", pages).Rows;
+            Guid.NewGuid(), "redirects.csv", [new CsvRow(2, "/en/old", "/en/about"), new CsvRow(3, "/english/old", "/en/contact")], site, "en-US", pages).Rows;
 
         Assert.Equal((PlanOutcome.Add, "1061/old"), (rows[0].Outcome, rows[0].Route));
         Assert.Equal((PlanOutcome.Skip, PlanReason.Duplicate, "1061/old"), (rows[1].Outcome, rows[1].Reason, rows[1].Route));

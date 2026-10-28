@@ -108,7 +108,7 @@ export type OutcomeCountModel = {
 
 export type PlanOutcome = 'Add' | 'AlreadyPresent' | 'Conflict' | 'Skip' | 'Error';
 
-export type PlanReason = 'None' | 'PageExistsAtPath' | 'EmptyNewUrl' | 'SameAsTarget' | 'Duplicate' | 'InvalidOldUrl' | 'InvalidNewUrl' | 'NotPublished' | 'OtherSite';
+export type PlanReason = 'None' | 'PageExistsAtPath' | 'EmptyNewUrl' | 'SameAsTarget' | 'Duplicate' | 'InvalidOldUrl' | 'InvalidNewUrl' | 'NotPublished' | 'OtherSite' | 'OutsideLanguagePath';
 
 export type PlanResponse = {
     planId: string;

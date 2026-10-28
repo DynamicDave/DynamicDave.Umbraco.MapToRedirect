@@ -4,8 +4,11 @@ using DynamicDave.Umbraco.MapToRedirect.Urls;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Redirects;
 
-/// <summary>The site and culture a request host (and path prefix) belongs to.</summary>
-public sealed record SiteMatch(SiteInfo Site, string Culture);
+/// <summary>
+/// The site, culture and domain a request host and path belong to; <paramref name="Domain"/> is null for a site
+/// without domains.
+/// </summary>
+public sealed record SiteMatch(SiteInfo Site, string Culture, CultureDomain? Domain);
 
 /// <summary>The redirect lookup for a request: the route and culture to pass to <see cref="IRedirectStore.Find"/>.</summary>
 public sealed record ExtensionRedirectLookup(SiteInfo Site, string Culture, string Route);
@@ -58,47 +61,43 @@ public static partial class ExtensionRedirectRules
         && !IsReserved(path, extraReserved);
 
     /// <summary>
-    /// The site and culture of a request host ("klant.nl" or "klant.nl:443") and route path. A domain with a path
-    /// prefix ("klant.nl/en") only matches paths under that prefix, the longest prefix first; otherwise the first domain
-    /// without a prefix on the host wins. An unknown host belongs to the first site without domains, which Umbraco
-    /// serves on any host; null when there is none.
+    /// The site, culture and domain of a request host ("klant.nl" or "klant.nl:443") and route path: among the domains
+    /// on that host whose path prefix the path is under (an empty prefix covers every path), the longest prefix wins,
+    /// then the first in site and culture order. A host whose domains all have other prefixes matches nothing. An
+    /// unknown host belongs to the first site without domains, which Umbraco serves on any host; null when there is none.
     /// </summary>
     public static SiteMatch? MatchSite(IReadOnlyList<SiteInfo> sites, string host, string path)
     {
         var hostName = HostName(host);
         if (hostName is null) return null;
 
-        var candidates = sites
-            .SelectMany(site => site.DomainsByCulture
-                .Where(domain => domain.Value.Any(domainHost => string.Equals(HostName(domainHost), hostName, StringComparison.Ordinal)))
-                .Select(domain => (Site: site, Culture: domain.Key, Prefixes: PrefixesOf(site, domain.Key))))
+        var onHost = sites
+            .SelectMany(site => site.Cultures.SelectMany(culture => site.DomainsOf(culture)
+                .Where(domain => string.Equals(HostName(domain.Host), hostName, StringComparison.Ordinal))
+                .Select(domain => new SiteMatch(site, culture, domain))))
             .ToList();
 
-        var prefixed = candidates
-            .SelectMany(c => c.Prefixes.Where(prefix => IsUnder(path, prefix)).Select(prefix => (c.Site, c.Culture, Prefix: prefix)))
-            .OrderByDescending(c => c.Prefix.Length)
+        var match = onHost
+            .Where(m => m.Domain!.PathPrefix.Length == 0 || IsUnder(path, m.Domain.PathPrefix))
+            .OrderByDescending(m => m.Domain!.PathPrefix.Length)
             .FirstOrDefault();
-        if (prefixed.Site is not null) return new SiteMatch(prefixed.Site, prefixed.Culture);
-
-        var plain = candidates.FirstOrDefault(c => c.Prefixes.Count == 0);
-        if (plain.Site is not null) return new SiteMatch(plain.Site, plain.Culture);
-
-        if (candidates.Count > 0) return null;
+        if (match is not null || onHost.Count > 0) return match;
 
         var withoutDomains = sites.FirstOrDefault(site => site.Domains.Count == 0 && site.Cultures.Count > 0);
-        return withoutDomains is null ? null : new SiteMatch(withoutDomains, withoutDomains.Cultures[0]);
+        return withoutDomains is null ? null : new SiteMatch(withoutDomains, withoutDomains.Cultures[0], null);
     }
 
     /// <summary>
     /// The redirect lookup for a request path (as requested, percent-encoded or not): the route
-    /// (<see cref="RedirectRoute.For"/> of <see cref="UrlNormalizer.RoutePath"/>) and culture of the matched site.
-    /// Null when the path is invalid or the host matches no site.
+    /// (<see cref="RedirectRoute.For(SiteInfo, CultureDomain?, string)"/> of <see cref="UrlNormalizer.RoutePath"/> on the
+    /// matched domain, without that domain's prefix) and culture of the matched site. Null when the path is invalid or
+    /// the host matches no site.
     /// </summary>
     public static ExtensionRedirectLookup? Lookup(IReadOnlyList<SiteInfo> sites, string host, string requestPath)
     {
         if (UrlNormalizer.RoutePath(requestPath) is not { } path) return null;
         if (MatchSite(sites, host, path) is not { } match) return null;
-        return new ExtensionRedirectLookup(match.Site, match.Culture, RedirectRoute.For(match.Site, match.Culture, path));
+        return new ExtensionRedirectLookup(match.Site, match.Culture, RedirectRoute.For(match.Site, match.Domain, path));
     }
 
     /// <summary>Appends the request's query string ("?a=1", or empty) to the redirect target.</summary>
@@ -158,14 +157,6 @@ public static partial class ExtensionRedirectRules
         var value = host.Trim();
         if (value.Length == 0) return null;
         return Uri.TryCreate("http://" + value, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.IdnHost.ToLowerInvariant() : null;
-    }
-
-    private static IReadOnlyList<string> PrefixesOf(SiteInfo site, string culture)
-    {
-        if (site.PathPrefixesByCulture is not { } byCulture) return [];
-        return byCulture.TryGetValue(culture, out var prefixes)
-            ? prefixes
-            : byCulture.FirstOrDefault(p => string.Equals(p.Key, culture, StringComparison.OrdinalIgnoreCase)).Value ?? [];
     }
 
     private static bool IsUnder(string path, string prefix) =>

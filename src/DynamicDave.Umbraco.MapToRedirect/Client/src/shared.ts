@@ -256,6 +256,7 @@ const ROW_MESSAGE_CODES = new Set([
   'InvalidNewUrl',
   'NotPublished',
   'OtherSite',
+  'OutsideLanguagePath',
   'Skipped',
   'Error',
   'SiteRemoved',

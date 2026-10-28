@@ -118,7 +118,7 @@ public class SitePageResolveTests
     }
 
     [Fact]
-    public void Domain_path_prefixes_are_grouped_by_culture()
+    public void Domains_with_their_path_prefixes_are_grouped_by_culture()
     {
         var domains = SiteCatalogRules.BuildDomains(
             [
@@ -127,10 +127,10 @@ public class SitePageResolveTests
             ],
             () => throw new InvalidOperationException("default culture not needed"));
 
-        Assert.False(domains.PathPrefixesByCulture.ContainsKey("nl"));
-        Assert.Equal(["/en"], domains.PathPrefixesByCulture["en"]);
-        Assert.Equal(["/en/uk"], domains.PathPrefixesByCulture["EN-gb"]);
-        Assert.False(domains.PathPrefixesByCulture.ContainsKey("de"));
+        Assert.Equal([new CultureDomain("klant.nl", "")], domains.CultureDomains["nl"]);
+        Assert.Equal([new CultureDomain("klant.nl", "/en"), new CultureDomain("klant.com", "/en")], domains.CultureDomains["en"]);
+        Assert.Equal([new CultureDomain("klant.nl", "/en/uk")], domains.CultureDomains["EN-gb"]);
+        Assert.False(domains.CultureDomains.ContainsKey("de"));
     }
 
     [Fact]

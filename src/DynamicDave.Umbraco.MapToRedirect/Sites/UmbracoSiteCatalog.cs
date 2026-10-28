@@ -59,7 +59,7 @@ public sealed class UmbracoSiteCatalog(
                 assigned,
                 () => defaultCulture ??= languageService.GetDefaultIsoCodeAsync().GetAwaiter().GetResult());
 
-            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), domains.Domains, domains.Cultures, domains.DomainsByCulture, domains.PathPrefixesByCulture));
+            sites.Add(new SiteInfo(rootKey, id.Result, NameOf(root), domains.Domains, domains.Cultures, domains.DomainsByCulture, domains.CultureDomains));
         }
 
         return sites;
@@ -200,7 +200,7 @@ public static class SiteCatalogRules
         var hosts = new List<string>();
         var cultures = new List<string>();
         var byCulture = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        var prefixesByCulture = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var domainsByCulture = new Dictionary<string, List<CultureDomain>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var domain in domains)
         {
@@ -214,9 +214,9 @@ public static class SiteCatalogRules
             if (!byCulture.TryGetValue(culture, out var cultureHosts)) byCulture[culture] = cultureHosts = [];
             if (!cultureHosts.Contains(host)) cultureHosts.Add(host);
 
-            if (PathPrefixOfDomain(domain.DomainName) is not { } prefix) continue;
-            if (!prefixesByCulture.TryGetValue(culture, out var prefixes)) prefixesByCulture[culture] = prefixes = [];
-            if (!prefixes.Contains(prefix)) prefixes.Add(prefix);
+            var cultureDomain = new CultureDomain(host, PathPrefixOfDomain(domain.DomainName) ?? string.Empty);
+            if (!domainsByCulture.TryGetValue(culture, out var cultureDomains)) domainsByCulture[culture] = cultureDomains = [];
+            if (!cultureDomains.Contains(cultureDomain)) cultureDomains.Add(cultureDomain);
         }
 
         if (cultures.Count == 0) cultures.Add(defaultCulture());
@@ -225,7 +225,7 @@ public static class SiteCatalogRules
             hosts,
             cultures,
             byCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase),
-            prefixesByCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.OrdinalIgnoreCase));
+            domainsByCulture.ToDictionary(p => p.Key, p => (IReadOnlyList<CultureDomain>)p.Value, StringComparer.OrdinalIgnoreCase));
     }
 
     // Lookups run once per CSV row against the same page list, so the list is indexed once and the index lives as
@@ -255,9 +255,9 @@ public static class SiteCatalogRules
 /// <summary>A domain assigned to a site root: its name, whether it is a wildcard ("*1057") and its culture.</summary>
 internal record SiteDomain(string DomainName, bool IsWildcard, string? Culture);
 
-/// <summary>The hosts and cultures of a site, derived from its domains.</summary>
+/// <summary>The hosts, cultures and per-culture domains (host and path prefix) of a site, derived from its domains.</summary>
 internal record SiteDomains(
     IReadOnlyList<string> Domains,
     IReadOnlyList<string> Cultures,
     IReadOnlyDictionary<string, IReadOnlyList<string>> DomainsByCulture,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> PathPrefixesByCulture);
+    IReadOnlyDictionary<string, IReadOnlyList<CultureDomain>> CultureDomains);

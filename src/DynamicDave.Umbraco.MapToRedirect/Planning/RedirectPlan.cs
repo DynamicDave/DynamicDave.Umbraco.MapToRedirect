@@ -26,6 +26,7 @@ public enum PlanReason
     InvalidNewUrl,
     NotPublished,
     OtherSite,
+    OutsideLanguagePath,
 }
 
 /// <summary>One CSV row in the test run.</summary>
