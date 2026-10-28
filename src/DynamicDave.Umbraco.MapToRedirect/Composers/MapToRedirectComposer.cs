@@ -31,6 +31,7 @@ public class MapToRedirectComposer : IComposer
         builder.Services.AddScoped<PageTitleFetcher>();
         builder.Services.AddScoped<ISiteCatalog, UmbracoSiteCatalog>();
         builder.Services.AddScoped<IRedirectStore, UmbracoRedirectStore>();
+        builder.Services.AddScoped<IRedirectTargetUrls, UmbracoRedirectTargetUrls>();
         builder.Services.AddScoped<RedirectPlanner>();
         builder.Services.AddScoped<RedirectApplier>();
         builder.Services.AddScoped<ImportUndoer>();

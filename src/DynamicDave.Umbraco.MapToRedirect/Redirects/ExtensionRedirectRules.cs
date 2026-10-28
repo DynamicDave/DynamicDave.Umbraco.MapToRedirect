@@ -70,7 +70,7 @@ public static partial class ExtensionRedirectRules
 
         var candidates = sites
             .SelectMany(site => site.DomainsByCulture
-                .Where(domain => domain.Value.Contains(hostName, StringComparer.OrdinalIgnoreCase))
+                .Where(domain => domain.Value.Any(domainHost => string.Equals(HostName(domainHost), hostName, StringComparison.Ordinal)))
                 .Select(domain => (Site: site, Culture: domain.Key, Prefixes: PrefixesOf(site, domain.Key))))
             .ToList();
 
@@ -109,11 +109,55 @@ public static partial class ExtensionRedirectRules
         return target + (target.Contains('?', StringComparison.Ordinal) ? "&" : "?") + parameters;
     }
 
+    /// <summary>
+    /// Makes a redirect target safe for the Location header, which only carries ASCII: the host of an absolute URL
+    /// becomes its IDN (punycode) form, and every other character outside printable ASCII is percent-encoded as UTF-8.
+    /// Existing percent-escapes stay as they are.
+    /// </summary>
+    public static string AsciiSafe(string url)
+    {
+        var schemeEnd = url.IndexOf("://", StringComparison.Ordinal);
+        if (schemeEnd > 0 && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Length > 0)
+        {
+            var authorityEnd = url.IndexOfAny(['/', '?', '#'], schemeEnd + 3);
+            var authority = uri.IdnHost + (uri.IsDefaultPort ? string.Empty : ":" + uri.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return url[..(schemeEnd + 3)] + authority + Escape(authorityEnd < 0 ? string.Empty : url[authorityEnd..]);
+        }
+
+        return Escape(url);
+    }
+
+    private static string Escape(string value)
+    {
+        if (value.All(c => c is > ' ' and < '\x7f')) return value;
+
+        var builder = new System.Text.StringBuilder(value.Length + 16);
+        Span<byte> bytes = stackalloc byte[4];
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (rune.Value is > ' ' and < 0x7f)
+            {
+                builder.Append((char)rune.Value);
+                continue;
+            }
+
+            var count = rune.EncodeToUtf8(bytes);
+            foreach (var b in bytes[..count])
+            {
+                builder.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // The lower-case IDN (punycode) host without port, so a Unicode domain ("café.nl") matches the ASCII Host header
+    // browsers send ("xn--caf-dma.nl") and the other way round.
     private static string? HostName(string host)
     {
         var value = host.Trim();
         if (value.Length == 0) return null;
-        return Uri.TryCreate("http://" + value, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.Host.ToLowerInvariant() : null;
+        return Uri.TryCreate("http://" + value, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.IdnHost.ToLowerInvariant() : null;
     }
 
     private static IReadOnlyList<string> PrefixesOf(SiteInfo site, string culture)

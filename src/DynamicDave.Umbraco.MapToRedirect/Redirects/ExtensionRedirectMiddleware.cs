@@ -4,9 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Configuration.Models;
-using Umbraco.Cms.Core.Models.PublishedContent;
-using Umbraco.Cms.Core.Routing;
-using Umbraco.Cms.Core.Web;
 
 namespace DynamicDave.Umbraco.MapToRedirect.Redirects;
 
@@ -46,23 +43,37 @@ public sealed class ExtensionRedirectMiddleware(
 
         if (context.Response.StatusCode != StatusCodes.Status404NotFound || context.Response.HasStarted) return;
 
+        string location;
         try
         {
             var target = FindTarget(context, path);
             if (target is null) return;
 
-            context.Response.Clear();
-            context.Response.StatusCode = StatusCodes.Status301MovedPermanently;
-            context.Response.Headers.Location = ExtensionRedirectRules.WithQuery(target, request.QueryString.Value ?? string.Empty);
+            // Built completely before the response changes, so a failure leaves the 404 untouched.
+            location = ExtensionRedirectRules.AsciiSafe(ExtensionRedirectRules.WithQuery(target, request.QueryString.Value ?? string.Empty));
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogDebug("Redirect lookup for {Path} stopped: the client aborted the request.", path);
+            return;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not look up a redirect for {Path}; the 404 stands.", path);
+            return;
         }
+
+        // Only the status, Location and the 404's body headers change: headers set by other middleware (HSTS, CSP,
+        // CORS, cookies) stay.
+        var response = context.Response;
+        response.StatusCode = StatusCodes.Status301MovedPermanently;
+        response.Headers.Location = location;
+        response.Headers.Remove(Microsoft.Net.Http.Headers.HeaderNames.ContentType);
+        response.Headers.Remove(Microsoft.Net.Http.Headers.HeaderNames.ContentLength);
     }
 
-    // The absolute URL of the redirect's target page in the request's culture; null when there is no redirect or the
-    // page has no URL (unpublished, or not routable in that culture).
+    // The URL of the redirect's target page in the request's culture (relative on the request's domain, as Umbraco's
+    // own redirects); null when there is no redirect or the page has no URL (unpublished, or not routable there).
     private string? FindTarget(HttpContext context, string path)
     {
         var services = context.RequestServices;
@@ -72,10 +83,8 @@ public sealed class ExtensionRedirectMiddleware(
         var redirect = services.GetRequiredService<IRedirectStore>().Find(lookup.Route, lookup.Culture).FirstOrDefault();
         if (redirect is null) return null;
 
-        using var reference = services.GetRequiredService<IUmbracoContextFactory>().EnsureUmbracoContext();
         var current = new Uri($"{context.Request.Scheme}://{context.Request.Host.Value}{context.Request.PathBase.ToUriComponent()}{path}");
-        var url = services.GetRequiredService<IPublishedUrlProvider>().GetUrl(redirect.PageKey, UrlMode.Absolute, lookup.Culture, current);
-        return string.IsNullOrEmpty(url) || url == "#" ? null : url;
+        return services.GetRequiredService<IRedirectTargetUrls>().UrlOf(redirect.PageKey, lookup.Culture, current);
     }
 
     // Sites change rarely; a short cache keeps extension 404s (often bots) from reading domains on every request.

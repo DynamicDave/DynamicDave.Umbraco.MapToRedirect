@@ -154,4 +154,30 @@ public class ExtensionRedirectRulesTests
     [InlineData("https://klant.nl/over-ons/?x=1", "?a=1", "https://klant.nl/over-ons/?x=1&a=1")]
     public void Query_string_is_preserved(string target, string query, string expected) =>
         Assert.Equal(expected, ExtensionRedirectRules.WithQuery(target, query));
+
+    [Theory]
+    [InlineData("/over-ons/ons-team/?a=1", "/over-ons/ons-team/?a=1")]
+    [InlineData("/über/?q=ü", "/%C3%BCber/?q=%C3%BC")]
+    [InlineData("/a%C3%BC/?q=%20", "/a%C3%BC/?q=%20")]
+    [InlineData("/a b/😀", "/a%20b/%F0%9F%98%80")]
+    [InlineData("https://café.example:8443/über/", "https://xn--caf-dma.example:8443/%C3%BCber/")]
+    [InlineData("https://klant.nl", "https://klant.nl")]
+    [InlineData("https://klant.nl/x?y=1#z", "https://klant.nl/x?y=1#z")]
+    public void Location_is_ascii(string url, string expected) =>
+        Assert.Equal(expected, ExtensionRedirectRules.AsciiSafe(url));
+
+    // Umbraco stores domains as entered (Unicode); browsers send the punycode host, and the other way round.
+    [Theory]
+    [InlineData("café.nl", "xn--caf-dma.nl:443")]
+    [InlineData("café.nl", "CAFÉ.nl")]
+    [InlineData("xn--caf-dma.nl", "café.nl")]
+    public void Hosts_are_compared_as_idn(string domain, string host)
+    {
+        var site = Site(1080, "Café", ("nl-NL", [domain]));
+
+        var match = ExtensionRedirectRules.MatchSite([site], host, "/a.html");
+
+        Assert.NotNull(match);
+        Assert.Same(site, match.Site);
+    }
 }
